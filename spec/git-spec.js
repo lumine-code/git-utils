@@ -9,9 +9,7 @@ const _ = require('underscore')
 describe('git', () => {
   let repo
 
-  afterEach(() => {
-    if (repo) repo.release()
-  })
+  afterEach(() => repo?.release())
 
   describe('.open(path)', () => {
     describe('when the path is a repository', () => {
@@ -1030,6 +1028,7 @@ describe('git', () => {
       repo.caseInsensitiveFs = true
       workingDirectory = repo.getWorkingDirectory()
 
+      expect(repo.isWorkingDirectory(repoDirectory)).toBe(true)
       expect(repo.isWorkingDirectory(workingDirectory.toUpperCase())).toBe(true)
     })
   })
@@ -1116,7 +1115,9 @@ describe('git', () => {
         expect(repo.submoduleForPath('sub1')).toBe(null)
 
         let submoduleRepoPath = path.join(repo.getPath(), 'modules', 'sub/')
-        if (process.platform === 'win32') { submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/') }
+        if (process.platform === 'win32') {
+          submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/')
+        }
 
         expect(repo.submoduleForPath('sub').getPath()).toBe(submoduleRepoPath)
         expect(repo.submoduleForPath('sub/').getPath()).toBe(submoduleRepoPath)

@@ -71,16 +71,6 @@ remote tracking branch exists.
 Returns an object with `ahead` and `behind` keys pointing to integer values
 that will always be >= 0.
 
-### Repository.getCommitCount(fromCommit, toCommit)
-
-Get the number of commits between `fromCommit` and `toCommit`.
-
-`fromCommit` - The string commit SHA-1 to start the rev walk at.
-
-`toCommit` - The string commit SHA-1 to end the rev walk at.
-
-Returns the number of commits between the two, always >= 0.
-
 ### Repository.getConfigValue(key)
 
 Get the config value of the given key.
@@ -169,17 +159,6 @@ Returns an array of objects which represent an old or new line in a diff. Every
 object has `oldStart`, `oldLines`, `newStart`, `newLines`, `oldLineNumber` and
 `newLineNumber` keys pointing to integer values, and a `line` key pointing to the
 respective line content. May be `null` if the diff fails.
-
-### Repository.getMergeBase(commit1, commit2)
-
-Get the merge base of two commits.
-
-`commit1` - The string SHA-1 of the first commit.
-
-`commit2` - The string SHA-1 of the second commit.
-
-Returns the string SHA-1 of the merge base of `commit1` and `commit2` or `null`
-if there isn't one.
 
 ### Repository.getPath()
 

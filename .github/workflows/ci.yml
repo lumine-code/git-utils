@@ -20,7 +20,7 @@ jobs:
               CC: clang
               CXX: clang++
               npm_config_clang: 1
-          - os: windows-latest
+          - os: windows-2022
             env: {}
           - os: macos-latest
             env:
