@@ -40,8 +40,9 @@
     "node-addon-api": "^8.2.1"
   },
   "scripts": {
+    "install": "node scripts/install.js",
     "lint": "standard src spec",
     "test": "jasmine spec/*-spec.js",
-    "prepare": "git submodule update --init --recursive"
+    "prepare": "node scripts/prepare.js"
   }
 }
