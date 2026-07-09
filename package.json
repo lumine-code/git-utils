@@ -30,14 +30,14 @@
   "main": "./src/git.js",
   "devDependencies": {
     "jasmine": "^5.4.0",
-    "node-addon-api": "^8.2.1",
     "standard": "^10.0.3",
     "temp": "~0.9.4",
     "underscore": "~1.5.2",
     "wrench": "~1.4.4"
   },
   "dependencies": {
-    "fs-plus": "^3.0.0"
+    "fs-plus": "^3.0.0",
+    "node-addon-api": "^8.2.1"
   },
   "scripts": {
     "lint": "standard src spec",
