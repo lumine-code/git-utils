@@ -60,6 +60,24 @@
         'llhttp',
         'xdiff',
       ],
+      'actions': [
+        {
+          'action_name': 'patch_libgit2_ignore_rules',
+          'inputs': [
+            'scripts/patch-libgit2-ignore.js',
+            'deps/libgit2/src/libgit2/ignore.c',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/libgit2-ignore.c',
+          ],
+          'action': [
+            'node',
+            'scripts/patch-libgit2-ignore.js',
+            'deps/libgit2/src/libgit2/ignore.c',
+            '<(SHARED_INTERMEDIATE_DIR)/libgit2-ignore.c',
+          ],
+        },
+      ],
       'sources': [
         # src/libgit2 sources
         'deps/libgit2/src/libgit2/annotated_commit.c',
@@ -144,7 +162,7 @@
         'deps/libgit2/src/libgit2/index_map.c',
         'deps/libgit2/src/libgit2/index_map.h',
         'deps/libgit2/src/libgit2/hashmap_oid.h',
-        'deps/libgit2/src/libgit2/ignore.c',
+        '<(SHARED_INTERMEDIATE_DIR)/libgit2-ignore.c',
         'deps/libgit2/src/libgit2/ignore.h',
         'deps/libgit2/src/libgit2/index.c',
         'deps/libgit2/src/libgit2/index.h',
