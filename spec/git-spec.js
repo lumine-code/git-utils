@@ -141,6 +141,23 @@ describe('git', () => {
         expect(repo.isIgnored('subdir')).toBe(false)
         expect(repo.isIgnored('subdir/yak.txt')).toBe(false)
       })
+
+      it('honors repository negations of global ignore rules', () => {
+        const globalIgnorePath = path.join(ignoreRepoRoot, 'global-ignore')
+        fs.writeFileSync(globalIgnorePath, '/.claude/*\n')
+        fs.writeFileSync(path.join(ignoreRepoDir, '.gitignore'), '!.claude/skills/\n')
+        fs.makeTreeSync(path.join(ignoreRepoDir, '.claude', 'skills', 'example'))
+        fs.writeFileSync(path.join(ignoreRepoDir, '.claude', 'skills', 'example', 'SKILL.md'), '')
+        fs.writeFileSync(path.join(ignoreRepoDir, '.claude', 'settings.json'), '')
+
+        repo = git.open(ignoreRepoDir)
+        repo.setConfigValue('core.excludesfile', globalIgnorePath)
+
+        expect(repo.isIgnored('.claude/skills')).toBe(false)
+        expect(repo.isIgnored('.claude/skills/example')).toBe(false)
+        expect(repo.isIgnored('.claude/skills/example/SKILL.md')).toBe(false)
+        expect(repo.isIgnored('.claude/settings.json')).toBe(true)
+      })
     })
   })
 
