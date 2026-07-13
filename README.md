@@ -1,10 +1,14 @@
-# @lumine-code/git-utils [![CI](https://github.com/lumine-code/git-utils/actions/workflows/ci.yml/badge.svg)](https://github.com/lumine-code/git-utils/actions/workflows/ci.yml)
+# @lumine-code/git-utils
 
+Provides native Git repository utilities built on libgit2.
 
-Helpers for working with Git repositories built natively on top of
-[libgit2](http://libgit2.github.com).
+## Features
 
-## Installing
+- **Repository access**: opens repositories and exposes their working tree, references, and configuration.
+- **Status inspection**: reads staged, modified, new, deleted, ignored, and submodule states.
+- **Native implementation**: uses libgit2 through a Node-API addon for synchronous and asynchronous operations.
+
+## Installation
 
 ```sh
 npm install @lumine-code/git-utils
@@ -370,3 +374,7 @@ associated with `path`.
 `path` - A repository-relative string path.
 
 Raises an `Error` if the path isn't readable or if another exception occurs.
+
+## Contributing
+
+Got ideas to make this package better, found a bug, or want to help add new features? Just drop your thoughts on GitHub. Any feedback is welcome!

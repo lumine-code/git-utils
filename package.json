@@ -1,11 +1,11 @@
 {
   "name": "@lumine-code/git-utils",
-  "description": "A package for using Git repositories",
+  "author": "lumine-code",
+  "description": "Provides native Git repository utilities built on libgit2.",
   "version": "9.0.0",
   "license": "MIT",
-  "author": {
-    "name": "Kevin Sawicki",
-    "email": "kevin@github.com"
+  "publishConfig": {
+    "access": "public"
   },
   "contributors": [
     {
@@ -13,13 +13,8 @@
       "email": "gjtorikian@gmail.com"
     }
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/lumine-code/git-utils.git"
-  },
-  "bugs": {
-    "url": "https://github.com/lumine-code/git-utils/issues"
-  },
+  "repository": "https://github.com/lumine-code/git-utils",
+  "bugs": "https://github.com/lumine-code/git-utils/issues",
   "homepage": "https://github.com/lumine-code/git-utils",
   "keywords": [
     "git",
