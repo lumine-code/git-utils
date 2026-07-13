@@ -1,7 +1,7 @@
 {
-  "name": "@pulsar-edit/git-utils",
+  "name": "@lumine-code/git-utils",
   "description": "A package for using Git repositories",
-  "version": "8.1.0",
+  "version": "9.0.0",
   "license": "MIT",
   "author": {
     "name": "Kevin Sawicki",
@@ -15,12 +15,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pulsar-edit/git-utils.git"
+    "url": "https://github.com/lumine-code/git-utils.git"
   },
   "bugs": {
-    "url": "https://github.com/pulsar-edit/git-utils/issues"
+    "url": "https://github.com/lumine-code/git-utils/issues"
   },
-  "homepage": "http://atom.github.io/git-utils",
+  "homepage": "https://github.com/lumine-code/git-utils",
   "keywords": [
     "git",
     "libgit2",

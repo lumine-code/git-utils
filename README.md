@@ -1,4 +1,4 @@
-# Git Node module [![CI](https://github.com/atom/git-utils/actions/workflows/ci.yml/badge.svg)](https://github.com/atom/git-utils/actions/workflows/ci.yml)
+# @lumine-code/git-utils [![CI](https://github.com/lumine-code/git-utils/actions/workflows/ci.yml/badge.svg)](https://github.com/lumine-code/git-utils/actions/workflows/ci.yml)
 
 
 Helpers for working with Git repositories built natively on top of
@@ -7,7 +7,7 @@ Helpers for working with Git repositories built natively on top of
 ## Installing
 
 ```sh
-npm install git-utils
+npm install @lumine-code/git-utils
 ```
 
 ## Development
@@ -27,7 +27,7 @@ repository at the given path does not exist or cannot be opened.
 `search` - Set to false if we shouldn't search up in the directory tree
 
 ```coffeescript
-git = require 'git-utils'
+git = require '@lumine-code/git-utils'
 
 repository = git.open('/Users/me/repos/node')
 ```
