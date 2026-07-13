@@ -3,42 +3,45 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  Build:
+  test:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04-arm
-            env:
-              CC: clang
-              CXX: clang++
-              npm_config_clang: 1
           - os: ubuntu-latest
-            env:
-              CC: clang
-              CXX: clang++
-              npm_config_clang: 1
-          - os: windows-2022
-            env: {}
+            node: 20
+          - os: ubuntu-latest
+            node: 24
           - os: macos-latest
-            env:
-              CC: clang
-              CXX: clang++
-              npm_config_clang: 1
-    env: ${{ matrix.env }}
+            node: 24
+          - os: windows-latest
+            node: 24
     steps:
+      - name: Enable Git symlinks on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.symlinks true
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: actions/setup-node@v4
-        name: Install Node
         with:
-          node-version: 20
-      - name: Install module
-        run: |
-          npm run prepare
-          npm install
+          node-version: ${{ matrix.node }}
+      - name: Install dependencies
+        run: npm ci
       - name: Run tests
-        run: npm test
+        run: npm run lint && npm test
+      - name: Validate package contents
+        run: npm pack --dry-run

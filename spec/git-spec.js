@@ -1019,7 +1019,15 @@ describe('git', () => {
 
       const linkDirectory = path.join(fs.realpathSync(temp.mkdirSync('lower-case-symlink')), 'link')
       wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
-      fs.symlinkSync(repoDirectory, linkDirectory)
+      try {
+        fs.symlinkSync(repoDirectory, linkDirectory, 'junction')
+      } catch (error) {
+        if (process.platform === 'win32' && error.code === 'EPERM') {
+          pending('Creating symlinks requires Windows Developer Mode')
+          return
+        }
+        throw error
+      }
 
       repo = git.open(linkDirectory)
       repo.caseInsensitiveFs = true
