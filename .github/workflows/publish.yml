@@ -2,37 +2,33 @@ name: NPM Publish
 
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
 
-env:
-  NODE_VERSION: 20
-  NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-  CC: clang
-  CXX: clang++
-  npm_config_clang: 1
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - run: npm run prepare
-      - run: npm ci
-      - run: npm test
+    uses: ./.github/workflows/ci.yml
 
   publish:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CC: clang
+      CXX: clang++
+      npm_config_clang: 1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 24
           registry-url: https://registry.npmjs.org/
-      - run: npm run prepare
       - run: npm ci
-      - run: npm publish --access public
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
