@@ -1,6 +1,6 @@
 const path = require('path')
 const fs = require('fs-plus')
-const {Repository} = require('../build/Release/git.node')
+const { Repository } = require('../build/Release/git.node')
 
 const statusIndexNew = 1 << 0
 const statusIndexModified = 1 << 1
@@ -31,7 +31,6 @@ const indexStatusFlags =
   statusIndexDeleted |
   statusIndexRenamed |
   statusIndexTypeChange
-
 
 const IS_WINDOWS = process.platform === 'win32'
 
@@ -72,7 +71,7 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
     pathB = pathB.toLowerCase()
   }
 
-  let result = pathA === pathB
+  const result = pathA === pathB
   if (result || !IS_WINDOWS) return result
   if (!pathA.includes('~') && !pathB.includes('~')) {
     return result
@@ -85,8 +84,8 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
   if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
     return result
   }
-  let statA = fs.statSync(pathA)
-  let statB = fs.statSync(pathB)
+  const statA = fs.statSync(pathA)
+  const statB = fs.statSync(pathB)
 
   return statA.ino === statB.ino && statA.dev === statB.dev
 }
@@ -104,14 +103,14 @@ function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = tr
     pathA = pathA.toLowerCase()
     pathB = pathB.toLowerCase()
   }
-  if (!pathB.endsWith(`/`)) {
+  if (!pathB.endsWith('/')) {
     pathB = `${pathB}/`
   }
   return pathA.startsWith(pathB)
 }
 
 Repository.prototype.release = function () {
-  for (let submodulePath in this.submodules) {
+  for (const submodulePath in this.submodules) {
     const submoduleRepo = this.submodules[submodulePath]
     if (submoduleRepo) submoduleRepo.release()
   }
@@ -197,13 +196,13 @@ Repository.prototype.getAheadBehindCount = function (branch = 'HEAD') {
   }
 
   const headCommit = this.getReferenceTarget(branch)
-  if (!headCommit || headCommit.length === 0) return {ahead: 0, behind: 0}
+  if (!headCommit || headCommit.length === 0) return { ahead: 0, behind: 0 }
 
   const upstream = this.getUpstreamBranch()
-  if (!upstream || upstream.length === 0) return {ahead: 0, behind: 0}
+  if (!upstream || upstream.length === 0) return { ahead: 0, behind: 0 }
 
   const upstreamCommit = this.getReferenceTarget(upstream)
-  if (!upstreamCommit || upstreamCommit.length === 0) return {ahead: 0, behind: 0}
+  if (!upstreamCommit || upstreamCommit.length === 0) return { ahead: 0, behind: 0 }
 
   return this.compareCommits(headCommit, upstreamCommit)
 }
@@ -214,13 +213,13 @@ Repository.prototype.getAheadBehindCountAsync = async function (branch = 'HEAD')
   }
 
   const headCommit = this.getReferenceTarget(branch)
-  if (!headCommit || headCommit.length === 0) return {ahead: 0, behind: 0}
+  if (!headCommit || headCommit.length === 0) return { ahead: 0, behind: 0 }
 
   const upstream = this.getUpstreamBranch()
-  if (!upstream || upstream.length === 0) return {ahead: 0, behind: 0}
+  if (!upstream || upstream.length === 0) return { ahead: 0, behind: 0 }
 
   const upstreamCommit = this.getReferenceTarget(upstream)
-  if (!upstreamCommit || upstreamCommit.length === 0) return {ahead: 0, behind: 0}
+  if (!upstreamCommit || upstreamCommit.length === 0) return { ahead: 0, behind: 0 }
 
   return performAsyncWork(this, done => this.compareCommitsAsync(
     done,
@@ -268,7 +267,7 @@ Repository.prototype.submoduleForPath = function (filePath) {
   filePath = this.relativize(filePath)
   if (!filePath) return null
 
-  for (let submodulePath in this.submodules) {
+  for (const submodulePath in this.submodules) {
     const submoduleRepo = this.submodules[submodulePath]
     if (filePath === submodulePath) {
       return submoduleRepo
@@ -289,12 +288,12 @@ Repository.prototype.isWorkingDirectory = function (dirPath) {
     return false
   }
 
-  let workingDirectory = this.getWorkingDirectory()
+  const workingDirectory = this.getWorkingDirectory()
   if (workingDirectory && pathsAreEqual(workingDirectory, dirPath, this.caseInsensitiveFs)) {
     return true
   }
 
-  let openedWorkingDirectory = this.openedWorkingDirectory
+  const openedWorkingDirectory = this.openedWorkingDirectory
   if (openedWorkingDirectory && pathsAreEqual(openedWorkingDirectory, dirPath, this.caseInsensitiveFs)) {
     return true
   }
@@ -302,7 +301,7 @@ Repository.prototype.isWorkingDirectory = function (dirPath) {
   return false
 }
 
-const {getHeadAsync, getStatus, getStatusAsync, getStatusForPath} = Repository.prototype
+const { getHeadAsync, getStatus, getStatusAsync, getStatusForPath } = Repository.prototype
 delete Repository.prototype.getStatusForPath
 
 Repository.prototype.getStatusForPaths = function (paths) {
@@ -380,7 +379,7 @@ function realpathRecursive (unrealPath) {
   if (isRootPath(currentPath)) {
     return unrealPath
   }
-  let finalResult = trimPath(`${result}/${remainder}`)
+  const finalResult = trimPath(`${result}/${remainder}`)
   return normalizePath(finalResult)
 }
 
@@ -440,7 +439,7 @@ function openRepository (repositoryPath, search) {
 function openSubmodules (repository) {
   repository.submodules = {}
 
-  for (let relativePath of repository.getSubmodulePaths()) {
+  for (const relativePath of repository.getSubmodulePaths()) {
     if (relativePath) {
       const submodulePath = path.join(repository.getWorkingDirectory(), relativePath)
       const submoduleRepo = openRepository(submodulePath, false)

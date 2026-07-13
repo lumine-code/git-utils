@@ -1,7 +1,7 @@
 const git = require('../src/git')
 const path = require('path')
 const fs = require('fs-plus')
-const {exec} = require('child_process')
+const { exec } = require('child_process')
 const wrench = require('wrench')
 const temp = require('temp')
 const _ = require('underscore')
@@ -442,9 +442,9 @@ describe('git', () => {
   describe('.getReferences()', () => {
     it('returns a list of all the references', () => {
       const referencesObj = {
-        heads: [ 'refs/heads/diff-lines', 'refs/heads/getHeadOriginal', 'refs/heads/master' ],
-        remotes: [ 'refs/remotes/origin/getHeadOriginal', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master', 'refs/remotes/upstream/HEAD', 'refs/remotes/upstream/master' ],
-        tags: [ 'refs/tags/v1.0', 'refs/tags/v2.0' ]
+        heads: ['refs/heads/diff-lines', 'refs/heads/getHeadOriginal', 'refs/heads/master'],
+        remotes: ['refs/remotes/origin/getHeadOriginal', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master', 'refs/remotes/upstream/HEAD', 'refs/remotes/upstream/master'],
+        tags: ['refs/tags/v1.0', 'refs/tags/v2.0']
       }
 
       repo = git.open(path.join(__dirname, 'fixtures/references.git'))
@@ -470,7 +470,7 @@ describe('git', () => {
 
     describe('when the path is deleted', () => {
       it('returns of number of lines deleted', () => {
-        expect(repo.getDiffStats('a.txt')).toEqual({added: 0, deleted: 1})
+        expect(repo.getDiffStats('a.txt')).toEqual({ added: 0, deleted: 1 })
       })
     })
 
@@ -478,7 +478,7 @@ describe('git', () => {
       it('returns the number of lines added and deleted', () => {
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
         fs.writeFileSync(filePath, 'changing\na.txt', 'utf8')
-        expect(repo.getDiffStats('a.txt')).toEqual({added: 2, deleted: 1})
+        expect(repo.getDiffStats('a.txt')).toEqual({ added: 2, deleted: 1 })
       })
     })
 
@@ -486,7 +486,7 @@ describe('git', () => {
       it('returns that no lines were added or deleted', () => {
         const filePath = path.join(repo.getWorkingDirectory(), 'b.txt')
         fs.writeFileSync(filePath, 'changing\nb.txt\nwith lines', 'utf8')
-        expect(repo.getDiffStats('b.txt')).toEqual({added: 0, deleted: 0})
+        expect(repo.getDiffStats('b.txt')).toEqual({ added: 0, deleted: 0 })
       })
     })
 
@@ -496,7 +496,7 @@ describe('git', () => {
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
         repo = git.open(repoDirectory)
         fs.unlinkSync(path.join(repoDirectory, '.git/HEAD'))
-        expect(repo.getDiffStats('b.txt')).toEqual({added: 0, deleted: 0})
+        expect(repo.getDiffStats('b.txt')).toEqual({ added: 0, deleted: 0 })
       })
     })
   })
@@ -672,36 +672,36 @@ describe('git', () => {
 
     it('returns the number of commits ahead of and behind the upstream branch', () => {
       let counts = repo.getAheadBehindCount()
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = repo.getAheadBehindCount('refs/heads/master')
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = repo.getAheadBehindCount('master')
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = repo.getAheadBehindCount('refs/heads/masterblaster')
-      expect(counts).toEqual({ahead: 0, behind: 0})
+      expect(counts).toEqual({ ahead: 0, behind: 0 })
 
       counts = repo.getAheadBehindCount('')
-      expect(counts).toEqual({ahead: 0, behind: 0})
+      expect(counts).toEqual({ ahead: 0, behind: 0 })
     })
 
     it('resolves with the number of commits ahead of and behind the upstream branch', async () => {
       let counts = await repo.getAheadBehindCountAsync()
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = await repo.getAheadBehindCountAsync('refs/heads/master')
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = await repo.getAheadBehindCountAsync('master')
-      expect(counts).toEqual({ahead: 3, behind: 2})
+      expect(counts).toEqual({ ahead: 3, behind: 2 })
 
       counts = await repo.getAheadBehindCountAsync('refs/heads/masterblaster')
-      expect(counts).toEqual({ahead: 0, behind: 0})
+      expect(counts).toEqual({ ahead: 0, behind: 0 })
 
       counts = await repo.getAheadBehindCountAsync('')
-      expect(counts).toEqual({ahead: 0, behind: 0})
+      expect(counts).toEqual({ ahead: 0, behind: 0 })
     })
   })
 
@@ -742,28 +742,28 @@ describe('git', () => {
       it('ignores eol of line whitespace changes', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreEolWhitespace: false})
+        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreEolWhitespace: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreEolWhitespace: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreEolWhitespace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(1)
       })
     })
@@ -772,22 +772,22 @@ describe('git', () => {
       it('ignores whitespace changes', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceChange: false})
+        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: false})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: false})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(1)
       })
     })
@@ -796,22 +796,22 @@ describe('git', () => {
       it('ignores whitespace', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreAllSpace: false})
+        let diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: false})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffs('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: false})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(1)
 
-        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffs('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
       })
     })
@@ -822,7 +822,7 @@ describe('git', () => {
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
         repo = git.open(repoDirectory)
 
-        let diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: true})
+        let diffs = repo.getLineDiffs('a.txt', 'first line is different', { useIndex: true })
         expect(diffs.length).toBe(1)
 
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
@@ -830,10 +830,10 @@ describe('git', () => {
 
         await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
 
-        diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: true})
+        diffs = repo.getLineDiffs('a.txt', 'first line is different', { useIndex: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: false})
+        diffs = repo.getLineDiffs('a.txt', 'first line is different', { useIndex: false })
         expect(diffs.length).toBe(1)
       })
     })
@@ -876,28 +876,28 @@ describe('git', () => {
       it('ignores eol of line whitespace changes', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreEolWhitespace: false})
+        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreEolWhitespace: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreEolWhitespace: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreEolWhitespace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(4)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: false})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceAtEOL: true})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceAtEOL: true })
         expect(diffs.length).toBe(6)
       })
     })
@@ -906,22 +906,22 @@ describe('git', () => {
       it('ignores whitespace changes', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceChange: false})
+        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: false})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: false})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreSpaceChange: true})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreSpaceChange: true })
         expect(diffs.length).toBe(2)
       })
     })
@@ -930,22 +930,22 @@ describe('git', () => {
       it('ignores whitespace', () => {
         repo = git.open(path.join(__dirname, 'fixtures/whitespace.git'))
 
-        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreAllSpace: false})
+        let diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n second\r\n\tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: false})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffDetails('file.txt', 'first\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: false})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: false })
         expect(diffs.length).toBe(6)
 
-        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', {ignoreAllSpace: true})
+        diffs = repo.getLineDiffDetails('file.txt', ' \tfirst\r\n \tsecond\r\n \tthird\r\n', { ignoreAllSpace: true })
         expect(diffs.length).toBe(0)
       })
     })
@@ -956,7 +956,7 @@ describe('git', () => {
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
         repo = git.open(repoDirectory)
 
-        let diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: true})
+        let diffs = repo.getLineDiffDetails('a.txt', 'first line is different', { useIndex: true })
         expect(diffs.length).toBe(3)
 
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
@@ -964,10 +964,10 @@ describe('git', () => {
 
         await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
 
-        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: true})
+        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', { useIndex: true })
         expect(diffs.length).toBe(0)
 
-        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: false})
+        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', { useIndex: false })
         expect(diffs.length).toBe(3)
       })
     })
@@ -1125,7 +1125,7 @@ describe('git', () => {
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(submoduleDirectory, '.git'))
 
         await execCommands([
-          `git config --global protocol.file.allow always`,
+          'git config --global protocol.file.allow always',
           `cd ${repoDirectory}`,
           `git submodule add ${submoduleDirectory} sub`
         ])
@@ -1150,7 +1150,6 @@ describe('git', () => {
         expect(repo.submoduleForPath('sub/a/b/c/d').getPath()).toBe(submoduleRepoPath)
       })
     })
-
   }
 
   describe('.add(path)', () => {
@@ -1173,7 +1172,7 @@ describe('git', () => {
   })
 
   it('can handle multiple simultaneous async calls', async () => {
-    repoDirectory = temp.mkdirSync('node-git-repo-')
+    const repoDirectory = temp.mkdirSync('node-git-repo-')
     wrench.copyDirSyncRecursive(
       path.join(__dirname, 'fixtures/subdir.git'),
       path.join(repoDirectory, '.git')
@@ -1184,7 +1183,7 @@ describe('git', () => {
       () => repo.getAheadBehindCountAsync(),
       () => repo.getHeadAsync(),
       () => repo.getStatusAsync(),
-      () => repo.getStatusAsync(['*']),
+      () => repo.getStatusAsync(['*'])
     ]
 
     for (let i = 0; i < 20; i++) {

@@ -34,8 +34,6 @@ exports.afterEach = function afterEach (fn) {
 
 function waitsForPromise (promise, spec) {
   let done = false
-  let error = null
-
   global.waitsFor('test promise to resolve', () => {
     return done
   })

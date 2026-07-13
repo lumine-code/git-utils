@@ -24,19 +24,19 @@
   ],
   "main": "./src/git.js",
   "devDependencies": {
-    "jasmine": "^5.4.0",
-    "standard": "^10.0.3",
+    "jasmine": "^6.3.0",
+    "standard": "^17.1.2",
     "temp": "~0.9.4",
-    "underscore": "~1.5.2",
-    "wrench": "~1.4.4"
+    "underscore": "^1.13.8",
+    "wrench": "^1.5.9"
   },
   "dependencies": {
     "fs-plus": "https://github.com/lumine-code/fs-plus.git#c00d99a85642969635218ed8862a37f7a0bce6e2",
-    "node-addon-api": "^8.2.1"
+    "node-addon-api": "^8.9.0"
   },
   "scripts": {
     "install": "node scripts/install.js",
-    "lint": "standard src spec",
+    "lint": "standard --env jasmine src spec",
     "test": "jasmine spec/*-spec.js",
     "prepare": "node scripts/prepare.js"
   }
