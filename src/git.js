@@ -1,5 +1,5 @@
 const path = require('path')
-const fs = require('fs-plus')
+const fs = require('@lumine-code/fs-plus')
 const { Repository } = require('../build/Release/git.node')
 
 const statusIndexNew = 1 << 0

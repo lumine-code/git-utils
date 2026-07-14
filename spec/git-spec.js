@@ -1,6 +1,6 @@
 const git = require('../src/git')
 const path = require('path')
-const fs = require('fs-plus')
+const fs = require('@lumine-code/fs-plus')
 const { exec } = require('child_process')
 const wrench = require('wrench')
 const temp = require('temp')
