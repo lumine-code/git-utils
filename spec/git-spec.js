@@ -1,8 +1,13 @@
 const git = require('../src/git')
 const path = require('path')
 const fs = require('@lumine-code/fs-plus')
+const nodeFs = require('fs')
 const { exec } = require('child_process')
-const wrench = require('wrench')
+// Native-fs shim for the two wrench helpers this spec used.
+const wrench = {
+  copyDirSyncRecursive: (src, dst) => nodeFs.cpSync(src, dst, { recursive: true }),
+  rmdirSyncRecursive: (dir) => nodeFs.rmSync(dir, { recursive: true, force: true }),
+}
 const temp = require('temp')
 const _ = require('underscore')
 

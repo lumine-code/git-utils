@@ -27,8 +27,7 @@
     "jasmine": "^6.3.0",
     "standard": "^17.1.2",
     "temp": "~0.9.4",
-    "underscore": "^1.13.8",
-    "wrench": "^1.5.9"
+    "underscore": "^1.13.8"
   },
   "dependencies": {
     "@lumine-code/fs-plus": "https://github.com/lumine-code/fs-plus.git#6be512460cd7a6d617277f9608b3fcba264cb3be",
