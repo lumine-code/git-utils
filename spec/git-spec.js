@@ -6,7 +6,7 @@ const { exec } = require('child_process')
 // Native-fs shim for the two wrench helpers this spec used.
 const wrench = {
   copyDirSyncRecursive: (src, dst) => nodeFs.cpSync(src, dst, { recursive: true }),
-  rmdirSyncRecursive: (dir) => nodeFs.rmSync(dir, { recursive: true, force: true }),
+  rmdirSyncRecursive: (dir) => nodeFs.rmSync(dir, { recursive: true, force: true })
 }
 const temp = require('temp')
 const _ = require('underscore')
