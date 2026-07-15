@@ -30,7 +30,7 @@
     "underscore": "^1.13.8"
   },
   "dependencies": {
-    "@lumine-code/fs-plus": "https://github.com/lumine-code/fs-plus.git#6be512460cd7a6d617277f9608b3fcba264cb3be",
+    "@lumine-code/fs-plus": "https://github.com/lumine-code/fs-plus.git#742e3e166f56261189ff245a63967b8f1970fadd",
     "node-addon-api": "^8.9.0"
   },
   "scripts": {
