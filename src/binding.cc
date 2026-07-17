@@ -46,6 +46,43 @@ Napi::Value Repository::Exists(const Napi::CallbackInfo& info) {
   return result;
 }
 
+// Returns `{ klass, message }` describing why the last open failed, or null
+// when the repository opened successfully. Lets git.js turn a dubious-ownership
+// rejection into a typed error instead of an indistinguishable null.
+Napi::Value Repository::GetOpenError(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  Napi::HandleScope scope(env);
+  if (repository != NULL) {
+    return env.Null();
+  }
+  auto result = Napi::Object::New(env);
+  result.Set("klass", Napi::Number::New(env, open_error_klass));
+  result.Set("message", Napi::String::New(env, open_error_message));
+  return result;
+}
+
+// Toggle libgit2's repository ownership validation (its equivalent of git's
+// safe.directory / "dubious ownership" guard). Disabling it lets Lumine open a
+// repository whose directory is owned by another account (common on Windows
+// when a clone was created from an elevated terminal). The flag is process-wide
+// and resets when the process exits, which matches a "silence this session"
+// bypass.
+static Napi::Value SetOwnerValidation(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  CHECK(info.Length() >= 1 && info[0].IsBoolean(),
+        "Expected boolean as first argument", env);
+  int enabled = info[0].As<Napi::Boolean>().Value() ? 1 : 0;
+  git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, enabled);
+  return env.Undefined();
+}
+
+static Napi::Value GetOwnerValidation(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  int enabled = 1;
+  git_libgit2_opts(GIT_OPT_GET_OWNER_VALIDATION, &enabled);
+  return Napi::Boolean::New(env, enabled != 0);
+}
+
 Napi::Value Repository::GetPath(const Napi::CallbackInfo& info) {
   auto env = info.Env();
   Napi::HandleScope scope(env);
@@ -1183,6 +1220,11 @@ Repository::Repository(
   );
 
   if (result != GIT_OK) {
+    const git_error* error = git_error_last();
+    open_error_klass = error != NULL ? error->klass : 0;
+    open_error_message = error != NULL && error->message != NULL
+      ? error->message
+      : "";
     repository = NULL;
     async_repository = NULL;
     return;
@@ -1248,6 +1290,7 @@ void Repository::Init(Napi::Env env, Napi::Object exports) {
       InstanceMethod<&Repository::GetReferences>("getReferences", napi_default_method),
       InstanceMethod<&Repository::CheckoutReference>("checkoutRef", napi_default_method),
       InstanceMethod<&Repository::Add>("add", napi_default_method),
+      InstanceMethod<&Repository::GetOpenError>("getOpenError", napi_default_method),
     }
   );
 
@@ -1260,6 +1303,14 @@ void Repository::Init(Napi::Env env, Napi::Object exports) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   git_libgit2_init();
   Repository::Init(env, exports);
+  exports.Set(
+    "setOwnerValidation",
+    Napi::Function::New(env, SetOwnerValidation)
+  );
+  exports.Set(
+    "getOwnerValidation",
+    Napi::Function::New(env, GetOwnerValidation)
+  );
   return exports;
 }
 

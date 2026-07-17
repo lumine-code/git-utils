@@ -37,6 +37,28 @@ describe('git', () => {
     })
   })
 
+  describe('owner validation', () => {
+    afterEach(() => git.setOwnerValidation(true))
+
+    it('is enabled by default', () => {
+      expect(git.getOwnerValidation()).toBe(true)
+    })
+
+    it('can be toggled off and back on for the process', () => {
+      git.setOwnerValidation(false)
+      expect(git.getOwnerValidation()).toBe(false)
+      git.setOwnerValidation(true)
+      expect(git.getOwnerValidation()).toBe(true)
+    })
+
+    it('still opens an owned repository regardless of the setting', () => {
+      git.setOwnerValidation(false)
+      expect(git.open(__dirname)).not.toBeNull()
+      git.setOwnerValidation(true)
+      expect(git.open(__dirname)).not.toBeNull()
+    })
+  })
+
   describe('.getPath()', () => {
     it('returns the path to the .git directory', () => {
       const repositoryPath = git.open(__dirname).getPath()

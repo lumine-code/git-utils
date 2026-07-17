@@ -62,6 +62,7 @@ private:
   Napi::Value GetReferences(const Napi::CallbackInfo& info);
   Napi::Value CheckoutReference(const Napi::CallbackInfo& info);
   Napi::Value Add(const Napi::CallbackInfo& info);
+  Napi::Value GetOpenError(const Napi::CallbackInfo& info);
 
   static int SubmoduleCallback(
     git_submodule* submodule,
@@ -105,6 +106,11 @@ private:
 
   git_repository* repository;
   git_repository* async_repository;
+
+  // Captured from the last failed open so callers can distinguish a genuine
+  // "not a repository" from a libgit2 rejection such as dubious ownership.
+  int open_error_klass = 0;
+  std::string open_error_message;
 };
 
 

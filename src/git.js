@@ -1,6 +1,23 @@
 const path = require('path')
 const fs = require('@lumine-code/fs-plus')
-const { Repository } = require('../build/Release/git.node')
+const binding = require('../build/Release/git.node')
+const { Repository } = binding
+
+// libgit2 reports a repository whose directory is owned by another account
+// (git's "dubious ownership") as a GIT_ERROR_CONFIG failure with this message.
+const DUBIOUS_OWNERSHIP_PATTERN = /not owned by (the )?current user/i
+
+// Raised by open() when libgit2 refuses a repository purely because of an
+// ownership mismatch, so callers can offer a bypass instead of treating the
+// directory as if it were not a repository at all.
+function dubiousOwnershipError (repositoryPath, message) {
+  const error = new Error(
+    message || `Repository path '${repositoryPath}' is not owned by the current user`
+  )
+  error.code = 'DubiousOwnership'
+  error.path = repositoryPath
+  return error
+}
 
 const statusIndexNew = 1 << 0
 const statusIndexModified = 1 << 1
@@ -432,6 +449,10 @@ function openRepository (repositoryPath, search) {
     }
     return repository
   } else {
+    const openError = repository.getOpenError()
+    if (openError && DUBIOUS_OWNERSHIP_PATTERN.test(openError.message)) {
+      throw dubiousOwnershipError(repositoryPath, openError.message)
+    }
     return null
   }
 }
@@ -442,7 +463,14 @@ function openSubmodules (repository) {
   for (const relativePath of repository.getSubmodulePaths()) {
     if (relativePath) {
       const submodulePath = path.join(repository.getWorkingDirectory(), relativePath)
-      const submoduleRepo = openRepository(submodulePath, false)
+      // A submodule owned by another account must not abort opening the parent;
+      // skip it the same way a submodule that fails to open for any reason is.
+      let submoduleRepo = null
+      try {
+        submoduleRepo = openRepository(submodulePath, false)
+      } catch (error) {
+        if (error.code !== 'DubiousOwnership') throw error
+      }
       if (submoduleRepo) {
         if (submoduleRepo.getPath() === repository.getPath()) {
           submoduleRepo.release()
@@ -459,4 +487,16 @@ exports.open = function (repositoryPath, search = true) {
   const repository = openRepository(repositoryPath, search)
   if (repository) openSubmodules(repository)
   return repository
+}
+
+// Enable or disable libgit2's repository ownership validation for this process.
+// Disabling it bypasses the "dubious ownership" guard that makes open() throw a
+// DubiousOwnership error, and stays in effect until the process exits.
+exports.setOwnerValidation = function (enabled) {
+  binding.setOwnerValidation(enabled)
+}
+
+// Whether libgit2's repository ownership validation is currently enabled.
+exports.getOwnerValidation = function () {
+  return binding.getOwnerValidation()
 }
