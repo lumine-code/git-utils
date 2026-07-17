@@ -6,7 +6,18 @@
         'libgit2'
       ],
       'defines': [
+        # Build against the N-API version of the target runtime (10 under
+        # Electron 43). node-addon-api's teardown-safe callback path is only
+        # compiled in at N-API >= 10; the baseline default of 8 leaves it
+        # expecting the legacy failure status and it still aborts.
+        'NAPI_VERSION=<(napi_build_version)',
         'NAPI_DISABLE_CPP_EXCEPTIONS',
+        # An async worker (git status/head/compare) can complete after the
+        # renderer starts tearing down, when JS can no longer run. Without this
+        # the callback failure escalates to napi_fatal_error and crashes the
+        # renderer; with it node-addon-api detects the terminating environment
+        # and returns quietly instead.
+        'NODE_API_SWALLOW_UNTHROWABLE_EXCEPTIONS',
       ],
       'include_dirs': [
         "<!(node -p \"require('node-addon-api').include_dir\")",
