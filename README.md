@@ -375,6 +375,21 @@ associated with `path`.
 
 Raises an `Error` if the path isn't readable or if another exception occurs.
 
+## Changes
+
+This is the Lumine fork of `git-utils`, published under the `@lumine-code` scope. Relative to the upstream Pulsar package it:
+
+- Rebrands the package to `@lumine-code/git-utils` and releases it as a new major version.
+- Upgrades the bundled libgit2 from 1.8.5 to 1.9.4.
+- Builds the native addon at N-API 10 and swallows teardown-time callback exceptions to avoid renderer crashes on window teardown.
+- Makes `node-addon-api` a runtime dependency and handles libgit2 hydration during git-dependency installs.
+- Fixes Windows case-sensitivity and realpath handling in path comparison.
+- Honors repository negations of global ignore rules and applies the ignore-rule patch during native builds.
+- Adds dubious-ownership handling with a session bypass.
+- Modernizes dependencies onto the `@lumine-code` forks and drops `wrench` for native `fs.cpSync`/`fs.rmSync` in the specs.
+- Adds cross-platform CI and modernizes the publish workflows.
+- Updates the license attribution for Lumine.
+
 ## Contributing
 
 Got ideas to make this package better, found a bug, or want to help add new features? Just drop your thoughts on GitHub. Any feedback is welcome!
