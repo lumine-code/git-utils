@@ -2,6 +2,9 @@
 
 Provides native Git repository utilities built on libgit2.
 
+> [!WARNING]
+> **This package is deprecated.** [Lumine](https://github.com/lumine-code/lumine) no longer depends on it — its Git integration has moved to a pure-JavaScript implementation backed by the system `git`. This repository is archived and no longer maintained.
+
 ## Features
 
 - **Repository access**: opens repositories and exposes their working tree, references, and configuration.
