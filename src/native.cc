@@ -1338,6 +1338,18 @@ static std::string TrimDiffLine(const git_diff_line *line) {
   return content;
 }
 
+static bool PatchHasMeaningfulChange(git_patch *patch) {
+  if (!patch) return false;
+  const git_diff_delta *delta = git_patch_get_delta(patch);
+  if (!delta) return false;
+  if (git_patch_num_hunks(patch) > 0) return true;
+  if (delta->status != GIT_DELTA_MODIFIED) return true;
+  if ((delta->flags & GIT_DIFF_FLAG_BINARY) != 0) return true;
+  if (delta->old_file.mode != delta->new_file.mode) return true;
+  return delta->old_file.mode == GIT_FILEMODE_COMMIT ||
+    delta->new_file.mode == GIT_FILEMODE_COMMIT;
+}
+
 static int StructuredPatchJson(std::string *json, git_patch *patch) {
   const git_diff_delta *delta = git_patch_get_delta(patch);
   if (!delta) {
@@ -1432,6 +1444,7 @@ static int BuildSelectedDiff(std::string *files_json, std::string *raw_patch,
     int error = git_patch_from_diff(&raw_patch_object, diff, index);
     if (error < 0) return error;
     git_ptr<git_patch, git_patch_free> patch(raw_patch_object, git_patch_free);
+    if (!PatchHasMeaningfulChange(patch.get())) continue;
     if (request.format != "patch") {
       std::string file;
       error = StructuredPatchJson(&file, patch.get());
@@ -1489,7 +1502,8 @@ static int BuildDiffJson(std::string *json, git_repository *repository, const Re
     if (error < 0) return error;
     git_ptr<git_patch, git_patch_free> patch(raw_patch, git_patch_free);
     const git_diff_delta *delta = patch ? git_patch_get_delta(patch.get()) : nullptr;
-    if (patch && DeltaMatchesFilter(delta, request.diff_filter)) {
+    if (patch && PatchHasMeaningfulChange(patch.get()) &&
+        DeltaMatchesFilter(delta, request.diff_filter)) {
       if (request.format != "patch") {
         std::string file;
         error = StructuredPatchJson(&file, patch.get());

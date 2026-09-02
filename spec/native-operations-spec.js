@@ -247,6 +247,22 @@ describe('native v10 operations', () => {
     expect(all.files.length).toBe(1)
   })
 
+  it('omits whitespace-only deltas when whitespace differences are ignored', async () => {
+    fs.writeFileSync(path.join(fixture.workingDirectory, 'tracked.txt'), 'one  two\n')
+    runGit(fixture.workingDirectory, ['add', 'tracked.txt'])
+    runGit(fixture.workingDirectory, ['commit', '-m', 'spaces'])
+    fs.writeFileSync(path.join(fixture.workingDirectory, 'tracked.txt'), 'one     two\n')
+
+    const diff = await git.diff(fixture.descriptor, {
+      from: { type: 'commit', revision: 'HEAD' },
+      to: { type: 'worktree' },
+      ignoreWhitespace: true,
+      format: 'both'
+    })
+    expect(diff.files).toEqual([])
+    expect(diff.rawPatch).toBe('')
+  })
+
   it('classifies binary patches and no-newline markers', async () => {
     fs.writeFileSync(path.join(fixture.workingDirectory, 'binary.dat'), Buffer.from([0, 1, 2, 3]))
     runGit(fixture.workingDirectory, ['add', 'binary.dat'])
