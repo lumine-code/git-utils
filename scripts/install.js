@@ -32,6 +32,19 @@ function hasLibgit2Sources () {
   return fs.existsSync(libgit2Sentinel)
 }
 
+function hasValidAddon () {
+  if (!fs.existsSync(addonPath)) return false
+  const validation = childProcess.spawnSync(process.execPath, [
+    '-e',
+    "const version=require(process.argv[1]).versions();process.exit(version.gitUtils==='10.0.0'&&version.libgit2==='1.9.6'?0:1)",
+    addonPath
+  ], {
+    cwd: root,
+    stdio: 'ignore'
+  })
+  return !validation.error && validation.status === 0
+}
+
 function currentLibgit2Revision () {
   if (!hasLibgit2Sources()) return null
   try {
@@ -80,12 +93,17 @@ function ensureLibgit2Sources () {
   checkoutPinnedLibgit2()
 }
 
-// A Git dependency is built in npm's temporary source checkout before it is
-// packed. The installed package contains the resulting Node-API addon but none
-// of its build inputs, so only source checkouts rebuild here.
-if (fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath)) {
+// A source checkout always rebuilds so edits and a freshly hydrated submodule
+// are reflected. Packed installs prefer their compatible Node-API binary, but
+// keep the complete build inputs so electron-rebuild (and script-suppressed
+// application installs) can compile for their target runtime later.
+if (hasGitMetadata()) {
   ensureLibgit2Sources()
   run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
-} else if (!fs.existsSync(addonPath)) {
-  throw new Error('The git-utils package does not contain build/Release/git.node')
+} else if (!hasValidAddon()) {
+  if (fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath) && hasLibgit2Sources()) {
+    run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
+  } else {
+    throw new Error('The git-utils package contains neither a compatible addon nor its build inputs')
+  }
 }
