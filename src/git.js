@@ -1,502 +1,265 @@
+'use strict'
+
+const crypto = require('crypto')
+const fs = require('fs')
 const path = require('path')
-const fs = require('@lumine-code/fs-plus')
 const binding = require('../build/Release/git.node')
-const { Repository } = binding
 
-// libgit2 reports a repository whose directory is owned by another account
-// (git's "dubious ownership") as a GIT_ERROR_CONFIG failure with this message.
-const DUBIOUS_OWNERSHIP_PATTERN = /not owned by (the )?current user/i
+const DESCRIPTOR_KEYS = ['gitDirectory', 'workingDirectory']
+let nextCancelId = 1
 
-// Raised by open() when libgit2 refuses a repository purely because of an
-// ownership mismatch, so callers can offer a bypass instead of treating the
-// directory as if it were not a repository at all.
-function dubiousOwnershipError (repositoryPath, message) {
-  const error = new Error(
-    message || `Repository path '${repositoryPath}' is not owned by the current user`
-  )
-  error.code = 'DubiousOwnership'
-  error.path = repositoryPath
+function nativeError (operation, message, code = 'ERR_GIT_NATIVE_ARGUMENT') {
+  const error = new TypeError(message)
+  error.code = code
+  error.operation = operation
   return error
 }
 
-const statusIndexNew = 1 << 0
-const statusIndexModified = 1 << 1
-const statusIndexDeleted = 1 << 2
-const statusIndexRenamed = 1 << 3
-const statusIndexTypeChange = 1 << 4
-const statusWorkingDirNew = 1 << 7
-const statusWorkingDirModified = 1 << 8
-const statusWorkingDirDelete = 1 << 9
-const statusWorkingDirTypeChange = 1 << 10
-const statusIgnored = 1 << 14
-
-const modifiedStatusFlags =
-  statusWorkingDirModified |
-  statusIndexModified |
-  statusWorkingDirDelete |
-  statusIndexDeleted |
-  statusWorkingDirTypeChange |
-  statusIndexTypeChange
-
-const newStatusFlags = statusWorkingDirNew | statusIndexNew
-
-const deletedStatusFlags = statusWorkingDirDelete | statusIndexDeleted
-
-const indexStatusFlags =
-  statusIndexNew |
-  statusIndexModified |
-  statusIndexDeleted |
-  statusIndexRenamed |
-  statusIndexTypeChange
-
-const IS_WINDOWS = process.platform === 'win32'
-
-// Given a path on disk (real or hypothetical), attempt to normalize it by
-// (optionally) resolving `realpath` and (if on Windows) converting all path
-// separators to forward slashes.
-function normalizePath (filePath, useRealpath = true) {
-  if (typeof filePath !== 'string') return filePath
-
-  // On Windows we always resolve `realpath` so that 8.3 short names (e.g.
-  // `RUNNER~1`) are normalized to their long form — this is what lets
-  // `pathStartsWith` (which has no short-name fallback of its own) match
-  // reliably even when the caller passes `useRealpath = false`. Off Windows we
-  // only resolve when asked. Either way we resolve at most once.
-  if (useRealpath || IS_WINDOWS) {
-    filePath = realpath(filePath)
+function validateDescriptor (operation, descriptor) {
+  if (!descriptor || typeof descriptor !== 'object') {
+    throw nativeError(operation, 'A repository descriptor is required')
   }
-  if (!IS_WINDOWS) return filePath
-  return filePath.replace(/\\/g, '/')
+  if (typeof descriptor.gitDirectory !== 'string' || descriptor.gitDirectory.length === 0) {
+    throw nativeError(operation, 'descriptor.gitDirectory must be a non-empty string')
+  }
+  if (descriptor.workingDirectory != null && typeof descriptor.workingDirectory !== 'string') {
+    throw nativeError(operation, 'descriptor.workingDirectory must be a string or null')
+  }
+  return Object.fromEntries(DESCRIPTOR_KEYS.map(key => [key, descriptor[key] ?? null]))
 }
 
-// Compare two paths to determine whether they resolve to the same file or
-// directory on disk.
-//
-// This is more complicated than it sounds — not just because of symlinks but
-// also because of files/directories on Windows possibly having both a short
-// name and a long name.
-function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = true) {
-  if (typeof pathA !== 'string' || typeof pathB !== 'string') {
-    return false
+function abortError (operation) {
+  const error = new Error(`Native Git ${operation} was aborted`)
+  error.name = 'AbortError'
+  error.code = 'ERR_GIT_NATIVE_ABORTED'
+  error.operation = operation
+  return error
+}
+
+async function invoke (operation, descriptor, request = {}, signal = request?.signal) {
+  if (signal?.aborted) throw abortError(operation)
+  const cleanRequest = request && typeof request === 'object'
+    ? Object.fromEntries(Object.entries(request).filter(([key]) => key !== 'signal'))
+    : request
+  const cancelId = nextCancelId++
+  if (nextCancelId >= Number.MAX_SAFE_INTEGER) nextCancelId = 1
+  const promise = binding.run(operation, descriptor, cleanRequest, cancelId)
+  if (!signal || typeof signal.addEventListener !== 'function') {
+    return JSON.parse(await promise)
   }
 
-  pathA = normalizePath(pathA, useRealpath)
-  pathB = normalizePath(pathB, useRealpath)
-
-  if (IS_WINDOWS || caseInsensitive) {
-    pathA = pathA.toLowerCase()
-    pathB = pathB.toLowerCase()
-  }
-
-  const result = pathA === pathB
-  if (result || !IS_WINDOWS) return result
-  if (!pathA.includes('~') && !pathB.includes('~')) {
-    return result
-  }
-
-  // If we get this far, we're on Windows and comparing two paths, at least one
-  // of which contains an 8.3 short name. The only obvious and reliable way to
-  // address this is to `statSync` both paths and verify their IDs are the
-  // same.
-  if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
-    return result
-  }
-  const statA = fs.statSync(pathA)
-  const statB = fs.statSync(pathB)
-
-  return statA.ino === statB.ino && statA.dev === statB.dev
-}
-
-// Returns whether `pathA` is a strict descendant of `pathB` — i.e., `pathB` is
-// a proper ancestor directory of `pathA`. This is exclusive: equal paths return
-// `false`, and callers (e.g. `relativize`) handle the equality case separately
-// via `pathsAreEqual`.
-function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = true) {
-  if (IS_WINDOWS) {
-    pathA = normalizePath(pathA, useRealpath)
-    pathB = normalizePath(pathB, useRealpath)
-  }
-  if (caseInsensitive) {
-    pathA = pathA.toLowerCase()
-    pathB = pathB.toLowerCase()
-  }
-  if (!pathB.endsWith('/')) {
-    pathB = `${pathB}/`
-  }
-  return pathA.startsWith(pathB)
-}
-
-Repository.prototype.release = function () {
-  for (const submodulePath in this.submodules) {
-    const submoduleRepo = this.submodules[submodulePath]
-    if (submoduleRepo) submoduleRepo.release()
-  }
-  return this._release()
-}
-
-Repository.prototype.getWorkingDirectory = function () {
-  if (!this.workingDirectory) {
-    this.workingDirectory = this._getWorkingDirectory()
-    if (this.workingDirectory) this.workingDirectory = this.workingDirectory.replace(/\/$/, '')
-  }
-  return this.workingDirectory
-}
-
-Repository.prototype.getShortHead = function () {
-  const head = this.getHead()
-  if (head == null) return head
-  if (head.startsWith('refs/heads/')) return head.substring(11)
-  if (head.startsWith('refs/tags/')) return head.substring(10)
-  if (head.startsWith('refs/remotes/')) return head.substring(13)
-  if (head.match(/[a-fA-F0-9]{40}/)) return head.substring(0, 7)
-  return head
-}
-
-Repository.prototype.isStatusModified = function (status = 0) {
-  return (status & modifiedStatusFlags) > 0
-}
-
-Repository.prototype.isPathModified = function (path) {
-  return this.isStatusModified(this.getStatus(path))
-}
-
-Repository.prototype.isStatusNew = function (status = 0) {
-  return (status & newStatusFlags) > 0
-}
-
-Repository.prototype.isPathNew = function (path) {
-  return this.isStatusNew(this.getStatus(path))
-}
-
-Repository.prototype.isStatusDeleted = function (status = 0) {
-  return (status & deletedStatusFlags) > 0
-}
-
-Repository.prototype.isPathDeleted = function (path) {
-  return this.isStatusDeleted(this.getStatus(path))
-}
-
-Repository.prototype.isPathStaged = function (path) {
-  return this.isStatusStaged(this.getStatus(path))
-}
-
-Repository.prototype.isStatusIgnored = function (status = 0) {
-  return (status & statusIgnored) > 0
-}
-
-Repository.prototype.isStatusStaged = function (status = 0) {
-  return (status & indexStatusFlags) > 0
-}
-
-Repository.prototype.getUpstreamBranch = function (branch) {
-  if (branch == null) branch = this.getHead()
-  if (!branch || !branch.startsWith('refs/heads/')) return null
-  const shortBranch = branch.substring(11)
-
-  const branchMerge = this.getConfigValue(`branch.${shortBranch}.merge`)
-  if (!branchMerge || !branchMerge.startsWith('refs/heads/')) return null
-  const shortBranchMerge = branchMerge.substring(11)
-
-  const branchRemote = this.getConfigValue(`branch.${shortBranch}.remote`)
-  if (!branch || branch.length === 0) return null
-
-  return `refs/remotes/${branchRemote}/${shortBranchMerge}`
-}
-
-Repository.prototype.getRemoteHead = function (remoteName = 'origin') {
-  return this.getSymbolicRefTarget(`refs/remotes/${remoteName}/HEAD`)
-}
-
-Repository.prototype.getAheadBehindCount = function (branch = 'HEAD') {
-  if (branch !== 'HEAD' && !branch.startsWith('refs/heads/')) {
-    branch = `refs/heads/${branch}`
-  }
-
-  const headCommit = this.getReferenceTarget(branch)
-  if (!headCommit || headCommit.length === 0) return { ahead: 0, behind: 0 }
-
-  const upstream = this.getUpstreamBranch()
-  if (!upstream || upstream.length === 0) return { ahead: 0, behind: 0 }
-
-  const upstreamCommit = this.getReferenceTarget(upstream)
-  if (!upstreamCommit || upstreamCommit.length === 0) return { ahead: 0, behind: 0 }
-
-  return this.compareCommits(headCommit, upstreamCommit)
-}
-
-Repository.prototype.getAheadBehindCountAsync = async function (branch = 'HEAD') {
-  if (branch !== 'HEAD' && !branch.startsWith('refs/heads/')) {
-    branch = `refs/heads/${branch}`
-  }
-
-  const headCommit = this.getReferenceTarget(branch)
-  if (!headCommit || headCommit.length === 0) return { ahead: 0, behind: 0 }
-
-  const upstream = this.getUpstreamBranch()
-  if (!upstream || upstream.length === 0) return { ahead: 0, behind: 0 }
-
-  const upstreamCommit = this.getReferenceTarget(upstream)
-  if (!upstreamCommit || upstreamCommit.length === 0) return { ahead: 0, behind: 0 }
-
-  return performAsyncWork(this, done => this.compareCommitsAsync(
-    done,
-    headCommit,
-    upstreamCommit
-  ))
-}
-
-Repository.prototype.checkoutReference = function (branch, create) {
-  if (branch.indexOf('refs/heads/') !== 0) branch = `refs/heads/${branch}`
-  return this.checkoutRef(branch, create)
-}
-
-Repository.prototype.relativize = function (filePath) {
-  let workingDirectory
-  if (!filePath) return filePath
-  filePath = realpathRecursive(filePath)
-
-  if (!IS_WINDOWS && filePath[0] !== '/') {
-    return filePath
-  }
-
-  workingDirectory = this.getWorkingDirectory()
-  if (workingDirectory) {
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
+  return await new Promise((resolve, reject) => {
+    let settled = false
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      binding.cancel(cancelId)
+      reject(abortError(operation))
     }
-  }
-
-  if (this.openedWorkingDirectory) {
-    workingDirectory = this.openedWorkingDirectory
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
-    }
-  }
-
-  return filePath
-}
-
-Repository.prototype.submoduleForPath = function (filePath) {
-  filePath = this.relativize(filePath)
-  if (!filePath) return null
-
-  for (const submodulePath in this.submodules) {
-    const submoduleRepo = this.submodules[submodulePath]
-    if (filePath === submodulePath) {
-      return submoduleRepo
-    } else if (filePath.startsWith(`${submodulePath}/`)) {
-      filePath = filePath.substring(submodulePath.length + 1)
-      return submoduleRepo.submoduleForPath(filePath) || submoduleRepo
-    }
-  }
-
-  return null
-}
-
-Repository.prototype.isWorkingDirectory = function (dirPath) {
-  if (!dirPath) return false
-  dirPath = normalizePath(dirPath)
-
-  if (!IS_WINDOWS && dirPath[0] !== '/') {
-    return false
-  }
-
-  const workingDirectory = this.getWorkingDirectory()
-  if (workingDirectory && pathsAreEqual(workingDirectory, dirPath, this.caseInsensitiveFs)) {
-    return true
-  }
-
-  const openedWorkingDirectory = this.openedWorkingDirectory
-  if (openedWorkingDirectory && pathsAreEqual(openedWorkingDirectory, dirPath, this.caseInsensitiveFs)) {
-    return true
-  }
-
-  return false
-}
-
-const { getHeadAsync, getStatus, getStatusAsync, getStatusForPath } = Repository.prototype
-delete Repository.prototype.getStatusForPath
-
-Repository.prototype.getStatusForPaths = function (paths) {
-  if (paths && paths.length > 0) {
-    return getStatus.call(this, paths)
-  } else {
-    return {}
-  }
-}
-
-Repository.prototype.getStatus = function (filePath) {
-  if (typeof filePath === 'string') {
-    return getStatusForPath.call(this, filePath)
-  } else {
-    return getStatus.call(this)
-  }
-}
-
-Repository.prototype.getHeadAsync = function () {
-  return performAsyncWork(this, done => getHeadAsync.call(this, done))
-}
-
-Repository.prototype.getStatusAsync = function () {
-  return performAsyncWork(this, done => getStatusAsync.call(this, done))
-}
-
-Repository.prototype.getStatusForPathsAsync = function (paths) {
-  return performAsyncWork(this, done => getStatusAsync.call(this, done, paths))
-}
-
-function performAsyncWork (repo, fn) {
-  fn = promisify(fn)
-
-  if (repo._lastAsyncPromise) {
-    repo._lastAsyncPromise = repo._lastAsyncPromise.then(fn, fn)
-  } else {
-    repo._lastAsyncPromise = fn()
-  }
-  return repo._lastAsyncPromise
-}
-
-function promisify (fn) {
-  return () => new Promise((resolve, reject) =>
-    fn((error, result) => error ? reject(error) : resolve(result))
-  )
-}
-
-// Given `unrealPath` — which may or may not exist on disk in its current form
-// — resolve to a real path on disk, if possible.
-//
-// This is done by traversing upward to the first directory that _does_ exist,
-// then getting its `realpath` and appending the rest back on.
-function realpathRecursive (unrealPath) {
-  let currentPath = unrealPath
-  let result = unrealPath
-  let remainder = ''
-  if (!path.isAbsolute(unrealPath)) {
-    return realpath(unrealPath)
-  }
-  while (!isRootPath(currentPath)) {
-    try {
-      result = typeof fs.realpathSync.native === 'function'
-        ? fs.realpathSync.native(currentPath)
-        : fs.realpathSync(currentPath)
-      break
-    } catch (e) {
-      if (e.code === 'ENOENT') {
-        currentPath = path.resolve(currentPath, '..')
-        remainder = path.relative(currentPath, unrealPath)
-      } else {
-        return unrealPath
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      raw => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        resolve(JSON.parse(raw))
+      },
+      error => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
       }
+    )
+  })
+}
+
+function fingerprint (value) {
+  const stableValue = value && typeof value === 'object' && 'generation' in value
+    ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'generation'))
+    : value
+  return crypto.createHash('sha256').update(JSON.stringify(stableValue)).digest('hex')
+}
+
+function section (value, knownFingerprint) {
+  const currentFingerprint = fingerprint(value)
+  return currentFingerprint === knownFingerprint
+    ? { fingerprint: currentFingerprint, unchanged: true }
+    : { fingerprint: currentFingerprint, unchanged: false, value }
+}
+
+function reviveCommit (value) {
+  if (!value) return value
+  if (value.author?.date != null) value.author.date = new Date(value.author.date)
+  if (value.committer?.date != null) value.committer.date = new Date(value.committer.date)
+  if (value.committerDate != null) value.committerDate = new Date(value.committerDate)
+  return value
+}
+
+function reviveSnapshot (value) {
+  for (const collection of [value.branches, value.remoteBranches, value.tags]) {
+    for (const entry of collection || []) reviveCommit(entry.lastCommit)
+  }
+  const worktrees = new Map()
+  for (const entry of value.worktrees || []) {
+    const normalizedPath = realpathRecursive(entry.path)
+    entry.path = normalizedPath
+    const key = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
+    const existing = worktrees.get(key)
+    if (!existing) {
+      worktrees.set(key, entry)
+    } else {
+      existing.headOid ??= entry.headOid
+      existing.branch ??= entry.branch
+      existing.detached ||= entry.detached
+      existing.bare ||= entry.bare
+      existing.locked ||= entry.locked
+      existing.lockedReason ??= entry.lockedReason
+      existing.prunable ||= entry.prunable
     }
   }
-  if (isRootPath(currentPath)) {
-    return unrealPath
+  if (value.worktrees) {
+    value.worktrees = Array.from(worktrees.values()).sort((left, right) =>
+      left.path.localeCompare(right.path))
   }
-  const finalResult = trimPath(`${result}/${remainder}`)
-  return normalizePath(finalResult)
+  return value
 }
 
-function trimPath (filePath) {
-  if (!filePath.endsWith('/')) return filePath
-  return filePath.replace(/\/$/, '')
-}
-
-// Attempts to resolve a path to its real path on disk; if it fails, returns
-// the original path.
-function realpath (unrealPath) {
+function realpathRecursive (target) {
+  let current = path.resolve(target)
+  const remainder = []
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current)
+    if (parent === current) return path.resolve(target)
+    remainder.unshift(path.basename(current))
+    current = parent
+  }
   try {
-    // `fs.realpathSync.native` somehow is the only thing that can consistently
-    // normalize 8.3 "short names" in Windows to their long equivalents.
-    if (typeof fs.realpathSync.native === 'function') {
-      return fs.realpathSync.native(unrealPath)
-    }
-    return fs.realpathSync(unrealPath)
-  } catch (e) {
-    return unrealPath
+    const resolved = typeof fs.realpathSync.native === 'function'
+      ? fs.realpathSync.native(current)
+      : fs.realpathSync(current)
+    return path.join(resolved, ...remainder)
+  } catch {
+    return path.resolve(target)
   }
 }
 
-// Returns whether the path has no parent directory.
-function isRootPath (repositoryPath) {
-  if (IS_WINDOWS) {
-    return /^[a-zA-Z]+:[\\/]$/.test(repositoryPath)
-  } else {
-    return repositoryPath === path.sep
+exports.versions = function versions () {
+  return binding.versions()
+}
+
+exports.configure = function configure (options = {}) {
+  if (typeof options.validateOwnership !== 'boolean') {
+    throw nativeError('configure', 'options.validateOwnership must be a boolean')
   }
+  return binding.configure(options.validateOwnership)
 }
 
-function openRepository (repositoryPath, search) {
-  if (!fs.existsSync(repositoryPath)) return null
-  const symlink = realpath(repositoryPath) !== repositoryPath
-  repositoryPath = normalizePath(repositoryPath, false)
+exports.snapshot = async function snapshot (descriptor, options = {}) {
+  descriptor = validateDescriptor('snapshot', descriptor)
+  const statusRequested = options.status !== false
+  const refsRequested = options.refs !== false
+  if (!statusRequested && !refsRequested) return {}
 
-  const repository = new Repository(repositoryPath, search)
-  if (repository.exists()) {
-    repository.caseInsensitiveFs = fs.isCaseInsensitive()
-    if (symlink) {
-      const workingDirectory = repository.getWorkingDirectory()
-      while (!isRootPath(repositoryPath)) {
-        if (pathsAreEqual(repositoryPath, workingDirectory, fs.isCaseInsensitive())) {
-          repository.openedWorkingDirectory = repositoryPath
-          break
-        }
-        repositoryPath = path.resolve(repositoryPath, '..')
-      }
-    }
-    return repository
-  } else {
-    const openError = repository.getOpenError()
-    if (openError && DUBIOUS_OWNERSHIP_PATTERN.test(openError.message)) {
-      throw dubiousOwnershipError(repositoryPath, openError.message)
-    }
-    return null
+  const generations = options.generations || {}
+  const value = await invoke('snapshot', descriptor, {
+    status: statusRequested,
+    refs: refsRequested,
+    includeIgnored: options.includeIgnored === true,
+    statusGeneration: generations.status ?? 1,
+    refsGeneration: generations.refs ?? 1
+  }, options.signal)
+  const known = options.knownFingerprints || {}
+  const result = {}
+  if (statusRequested) result.status = section(value.status, known.status)
+  if (refsRequested) result.refs = section(reviveSnapshot(value.refs), known.refs)
+  return result
+}
+
+exports.diff = async function diff (descriptor, request = {}) {
+  descriptor = validateDescriptor('diff', descriptor)
+  const format = request.format || 'structured'
+  if (!['structured', 'patch', 'both'].includes(format)) {
+    throw nativeError('diff', `Unsupported diff format: ${format}`)
   }
+  const native = await invoke('diff', descriptor, { ...request, format }, request.signal)
+  const result = { schemaVersion: 1, files: native.files }
+  if (format === 'patch' || format === 'both') result.rawPatch = native.rawPatch
+  return result
 }
 
-function openSubmodules (repository) {
-  repository.submodules = {}
+exports.history = async function history (descriptor, request = {}) {
+  descriptor = validateDescriptor('history', descriptor)
+  const result = await invoke('history', descriptor, request, request.signal)
+  return result.map(reviveCommit)
+}
 
-  for (const relativePath of repository.getSubmodulePaths()) {
-    if (relativePath) {
-      const submodulePath = path.join(repository.getWorkingDirectory(), relativePath)
-      // A submodule owned by another account must not abort opening the parent;
-      // skip it the same way a submodule that fails to open for any reason is.
-      let submoduleRepo = null
-      try {
-        submoduleRepo = openRepository(submodulePath, false)
-      } catch (error) {
-        if (error.code !== 'DubiousOwnership') throw error
-      }
-      if (submoduleRepo) {
-        if (submoduleRepo.getPath() === repository.getPath()) {
-          submoduleRepo.release()
-        } else {
-          openSubmodules(submoduleRepo)
-          repository.submodules[relativePath] = submoduleRepo
-        }
-      }
-    }
+exports.commit = async function commit (descriptor, request = {}) {
+  descriptor = validateDescriptor('commit', descriptor)
+  return reviveCommit(await invoke('commit', descriptor, request, request.signal))
+}
+
+exports.blame = async function blame (descriptor, request = {}) {
+  descriptor = validateDescriptor('blame', descriptor)
+  const result = await invoke('blame', descriptor, request, request.signal)
+  for (const row of result) {
+    if (row.author?.date != null) row.author.date = new Date(row.author.date)
   }
+  return result
 }
 
-exports.open = function (repositoryPath, search = true) {
-  const repository = openRepository(repositoryPath, search)
-  if (repository) openSubmodules(repository)
-  return repository
+exports.describe = async function describe (descriptor, request = {}) {
+  descriptor = validateDescriptor('describe', descriptor)
+  return invoke('describe', descriptor, request, request.signal)
 }
 
-// Enable or disable libgit2's repository ownership validation for this process.
-// Disabling it bypasses the "dubious ownership" guard that makes open() throw a
-// DubiousOwnership error, and stays in effect until the process exits.
-exports.setOwnerValidation = function (enabled) {
-  binding.setOwnerValidation(enabled)
+exports.branchesContaining = async function branchesContaining (descriptor, request = {}) {
+  descriptor = validateDescriptor('branchesContaining', descriptor)
+  return invoke('branchesContaining', descriptor, request, request.signal)
 }
 
-// Whether libgit2's repository ownership validation is currently enabled.
-exports.getOwnerValidation = function () {
-  return binding.getOwnerValidation()
+exports.readObjects = async function readObjects (descriptor, requests, options = {}) {
+  descriptor = validateDescriptor('readObjects', descriptor)
+  if (!Array.isArray(requests)) throw nativeError('readObjects', 'requests must be an array')
+  const result = await invoke('readObjects', descriptor, { requests }, options.signal)
+  return result.map(object => object == null
+    ? null
+    : { ...object, content: Buffer.from(object.content, 'base64') })
+}
+
+exports.readConfig = async function readConfig (descriptor, request = {}) {
+  descriptor = validateDescriptor('readConfig', descriptor)
+  return invoke('readConfig', descriptor, request, request.signal)
+}
+
+exports.fileMode = async function fileMode (descriptor, path, options = {}) {
+  descriptor = validateDescriptor('fileMode', descriptor)
+  return invoke('fileMode', descriptor, { path }, options.signal)
+}
+
+exports.submodulePaths = async function submodulePaths (descriptor, options = {}) {
+  descriptor = validateDescriptor('submodulePaths', descriptor)
+  return invoke('submodulePaths', descriptor, {}, options.signal)
+}
+
+exports.lineDiff = async function lineDiff (oldText, newText, options = {}) {
+  const asString = value => Buffer.isBuffer(value) ? value.toString() : String(value ?? '')
+  return invoke('lineDiff', {}, {
+    oldText: asString(oldText),
+    newText: asString(newText),
+    ignoreEolWhitespace: options.ignoreEolWhitespace === true || options.ignoreSpaceAtEOL === true,
+    ignoreSpaceChange: options.ignoreSpaceChange === true,
+    ignoreAllSpace: options.ignoreAllSpace === true
+  }, options.signal)
+}
+
+exports.mutate = async function mutate (descriptor, request = {}) {
+  descriptor = validateDescriptor('mutate', descriptor)
+  if (typeof request.operation !== 'string' || request.operation.length === 0) {
+    throw nativeError('mutate', 'request.operation must be a non-empty string')
+  }
+  const normalized = { ...request }
+  if (Buffer.isBuffer(normalized.content)) normalized.content = normalized.content.toString('base64')
+  normalized.contentEncoding = Buffer.isBuffer(request.content) ? 'base64' : 'utf8'
+  return invoke('mutate', descriptor, normalized, request.signal)
 }

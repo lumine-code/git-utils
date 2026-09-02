@@ -18,15 +18,30 @@
         # renderer; with it node-addon-api detects the terminating environment
         # and returns quietly instead.
         'NODE_API_SWALLOW_UNTHROWABLE_EXCEPTIONS',
+        # libgit2 1.9's SHA-256 repository support changes git_oid's ABI and
+        # function signatures; every target that exchanges OIDs must opt in.
+        'GIT_EXPERIMENTAL_SHA256',
       ],
       'include_dirs': [
         "<!(node -p \"require('node-addon-api').include_dir\")",
       ],
       'sources': [
-        'src/binding.cc'
+        'src/native.cc'
       ],
       'conditions': [
         ['OS=="win"', {
+          # VS 2026 can corrupt its incremental LTCG program database for a
+          # large statically-linked addon. The package ships no PDB and this
+          # keeps repeated native rebuilds deterministic.
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'WholeProgramOptimization': 'false',
+            },
+            'VCLinkerTool': {
+              'GenerateDebugInformation': 'false',
+              'LinkTimeCodeGeneration': 0,
+            },
+          },
           'msvs_disabled_warnings': [
             4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of
                    # data
@@ -61,6 +76,7 @@
         'LIBGIT2_NO_FEATURES_H',
         'GIT_SHA1_COLLISIONDETECT',
         'GIT_SHA256_BUILTIN',
+        'GIT_EXPERIMENTAL_SHA256',
         'GIT_HTTPPARSER_BUILTIN',
         # Node's util.h may be accidentally included so use this to guard
         # against compilation error.
@@ -417,10 +433,12 @@
           'defines': [
             'GIT_WINHTTP',
             'GIT_IO_WSAPOLL',
-            'GIT_REGEX_PCRE'
+            'GIT_REGEX_BUILTIN',
+            'PCRE2_STATIC',
+            'PCRE2_CODE_UNIT_WIDTH=8'
           ],
           'dependencies': [
-            'pcre',
+            'pcre2',
           ],
           'link_settings': {
             'libraries': [
@@ -522,7 +540,7 @@
         'deps/libgit2/src/libgit2',
         'deps/libgit2/src/util',
         'deps/libgit2/deps/xdiff',
-        'deps/libgit2/deps/pcre',
+        'deps/libgit2/deps/pcre2',
         'deps/libgit2/deps/llhttp',
       ],
       'direct_dependent_settings': {
@@ -581,9 +599,7 @@
           'msvs_disabled_warnings': [
             4005,  # macro redefinition
           ],
-          'include_dirs': [
-            'deps/libgit2/deps/pcre',
-          ],
+          'include_dirs': [],
         }],
       ],
     },
@@ -621,8 +637,8 @@
       ],
       'conditions': [
         ['OS=="win"', {
-          'defines': ['GIT_REGEX_PCRE', 'GIT_WIN32', 'GIT_IO_WSAPOLL'],
-          'include_dirs': ['deps/libgit2/deps/pcre'],
+          'defines': ['GIT_REGEX_BUILTIN', 'GIT_WIN32', 'GIT_IO_WSAPOLL', 'PCRE2_STATIC', 'PCRE2_CODE_UNIT_WIDTH=8'],
+          'include_dirs': ['deps/libgit2/deps/pcre2'],
         }, {
           'defines': ['GIT_REGEX_REGCOMP'],
         }],
@@ -630,8 +646,8 @@
       'include_dirs': [
         'deps/libgit2/include',
         'deps/libgit2/src/util',
-        # regexp.h with GIT_REGEX_BUILTIN includes pcre.h from here.
-        # 'deps/libgit2/deps/pcre',
+        # regexp.h with GIT_REGEX_BUILTIN includes bundled pcre2.h.
+        'deps/libgit2/deps/pcre2',
       ],
       'sources': [
         'deps/libgit2/deps/xdiff/xdiffi.c',
@@ -661,50 +677,66 @@
     ['OS=="win"', {
       'targets': [
           {
-            'target_name': 'pcre',
+            'target_name': 'pcre2',
             'win_delay_load_hook': 'false',
             'type': 'static_library',
             'sources': [
-              'deps/libgit2/deps/pcre/pcre_byte_order.c',
-              'deps/libgit2/deps/pcre/pcre_chartables.c',
-              'deps/libgit2/deps/pcre/pcre_compile.c',
-              'deps/libgit2/deps/pcre/pcre_config.c',
-              'deps/libgit2/deps/pcre/pcre_dfa_exec.c',
-              'deps/libgit2/deps/pcre/pcre_exec.c',
-              'deps/libgit2/deps/pcre/pcre_fullinfo.c',
-              'deps/libgit2/deps/pcre/pcre_get.c',
-              'deps/libgit2/deps/pcre/pcre_globals.c',
-              'deps/libgit2/deps/pcre/pcre_jit_compile.c',
-              'deps/libgit2/deps/pcre/pcre_maketables.c',
-              'deps/libgit2/deps/pcre/pcre_newline.c',
-              'deps/libgit2/deps/pcre/pcre_ord2utf8.c',
-              'deps/libgit2/deps/pcre/pcre_refcount.c',
-              'deps/libgit2/deps/pcre/pcre_string_utils.c',
-              'deps/libgit2/deps/pcre/pcre_study.c',
-              'deps/libgit2/deps/pcre/pcre_tables.c',
-              'deps/libgit2/deps/pcre/pcre_ucd.c',
-              'deps/libgit2/deps/pcre/pcre_valid_utf8.c',
-              'deps/libgit2/deps/pcre/pcre_version.c',
-              'deps/libgit2/deps/pcre/pcre_xclass.c',
-              'deps/libgit2/deps/pcre/pcreposix.c',
+              'deps/libgit2/deps/pcre2/pcre2_auto_possess.c',
+              'deps/libgit2/deps/pcre2/pcre2_chartables.c',
+              'deps/libgit2/deps/pcre2/pcre2_chkdint.c',
+              'deps/libgit2/deps/pcre2/pcre2_compile.c',
+              'deps/libgit2/deps/pcre2/pcre2_compile_cgroup.c',
+              'deps/libgit2/deps/pcre2/pcre2_compile_class.c',
+              'deps/libgit2/deps/pcre2/pcre2_config.c',
+              'deps/libgit2/deps/pcre2/pcre2_context.c',
+              'deps/libgit2/deps/pcre2/pcre2_convert.c',
+              'deps/libgit2/deps/pcre2/pcre2_dfa_match.c',
+              'deps/libgit2/deps/pcre2/pcre2_error.c',
+              'deps/libgit2/deps/pcre2/pcre2_extuni.c',
+              'deps/libgit2/deps/pcre2/pcre2_find_bracket.c',
+              'deps/libgit2/deps/pcre2/pcre2_maketables.c',
+              'deps/libgit2/deps/pcre2/pcre2_match.c',
+              'deps/libgit2/deps/pcre2/pcre2_match_data.c',
+              'deps/libgit2/deps/pcre2/pcre2_match_next.c',
+              'deps/libgit2/deps/pcre2/pcre2_newline.c',
+              'deps/libgit2/deps/pcre2/pcre2_ord2utf.c',
+              'deps/libgit2/deps/pcre2/pcre2_pattern_info.c',
+              'deps/libgit2/deps/pcre2/pcre2_script_run.c',
+              'deps/libgit2/deps/pcre2/pcre2_serialize.c',
+              'deps/libgit2/deps/pcre2/pcre2_string_utils.c',
+              'deps/libgit2/deps/pcre2/pcre2_study.c',
+              'deps/libgit2/deps/pcre2/pcre2_substitute.c',
+              'deps/libgit2/deps/pcre2/pcre2_substring.c',
+              'deps/libgit2/deps/pcre2/pcre2_tables.c',
+              'deps/libgit2/deps/pcre2/pcre2_ucd.c',
+              'deps/libgit2/deps/pcre2/pcre2_valid_utf.c',
+              'deps/libgit2/deps/pcre2/pcre2_xclass.c',
              ],
             'defines': [
-              'SUPPORT_PCRE8=1',
+              'SUPPORT_PCRE2_8=1',
+              'SUPPORT_UNICODE=1',
+              'PCRE2_CODE_UNIT_WIDTH=8',
+              'PCRE2_STATIC',
+              'PCRE2_EXPORT=',
+              'PCRE2_EXP_DECL=',
+              'PCRE2_EXP_DEFN=',
               'LINK_SIZE=2',
               'PARENS_NEST_LIMIT=250',
+              'HEAP_LIMIT=20000000',
               'MATCH_LIMIT=10000000',
-              'MATCH_LIMIT_RECURSION="MATCH_LIMIT"',
-              'NEWLINE="LF"',
-              'NO_RECURSE=1',
-              'POSIX_MALLOC_THRESHOLD=10',
-              'BSR_ANYCRLF=0',
+              'MATCH_LIMIT_DEPTH=MATCH_LIMIT',
+              'NEWLINE_DEFAULT=2',
+              'MAX_VARLOOKBEHIND=255',
               'MAX_NAME_SIZE=32',
               'MAX_NAME_COUNT=10000',
+              'BSR_ANYCRLF=0',
+              '_CRT_SECURE_NO_DEPRECATE',
+              '_CRT_SECURE_NO_WARNINGS',
             ],
             'include_dirs': [],
             'direct_dependent_settings': {
               'include_dirs': [
-                'deps/libgit2/deps/pcre',
+                'deps/libgit2/deps/pcre2',
               ],
             },
           },

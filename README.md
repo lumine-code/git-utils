@@ -2,14 +2,9 @@
 
 Provides native Git repository utilities built on libgit2.
 
-> [!WARNING]
-> **This package is deprecated.** [Lumine](https://github.com/lumine-code/lumine) no longer depends on it — its Git integration has moved to a pure-JavaScript implementation backed by the system `git`. This repository is archived and no longer maintained.
+`git-utils` is Lumine's stateless, asynchronous native backend for repository operations where avoiding a system Git process materially improves latency. It uses libgit2 1.9.6 and exposes no repository handles to callers.
 
-## Features
-
-- **Repository access**: opens repositories and exposes their working tree, references, and configuration.
-- **Status inspection**: reads staged, modified, new, deleted, ignored, and submodule states.
-- **Native implementation**: uses libgit2 through a Node-API addon for synchronous and asynchronous operations.
+Backend selection is static, not a fallback: Lumine uses this addon for native-fast operations, but routes status and worktree-involving diffs to system Git when a repository declares submodules. On large initialized submodules libgit2 must recursively calculate dirty and untracked state and can be slower than Git's threaded index scan; refs, object/config reads, history, blame, tree/index diffs and safe native mutations remain on this backend.
 
 ## Installation
 
@@ -17,382 +12,57 @@ Provides native Git repository utilities built on libgit2.
 npm install @lumine-code/git-utils
 ```
 
-## Development
-  * Clone the repository
-  * Run `npm run prepare` to get the submodule
-  * Run `npm install`
-  * Run `npm test` to run the specs
+Lumine pins this repository by commit rather than installing a registry release. The package contains the Node-API addon at `build/Release/git.node`; libgit2 sources and intermediate native build products are not shipped.
 
-## Docs
+## API
 
-### git.open(path, [search = true])
+```js
+const git = require('@lumine-code/git-utils')
 
-Open the repository at the given path.  This will return `null` if the
-repository at the given path does not exist or cannot be opened.
-
-`path` - The path from which to try to open a repository
-`search` - Set to false if we shouldn't search up in the directory tree
-
-```coffeescript
-git = require '@lumine-code/git-utils'
-
-repository = git.open('/Users/me/repos/node')
+const descriptor = {
+  gitDirectory: '/workspace/project/.git',
+  workingDirectory: '/workspace/project'
+}
 ```
 
-The opened repository will have a `submodules` property that will be an object
-of paths mapped to submodule {Repository} objects. The path keys will be
-relative to the opened repository's working directory.
+A descriptor supplies the exact Git directory and working directory. `git-utils` never searches parent directories. `workingDirectory` may be `null` for a bare repository. Every repository operation returns a Promise, opens the repository for that operation, and releases all native handles before settling; `versions()` and the process-wide `configure()` are synchronous.
 
-If search is set to true (the default), all paths up to the filesystem root will
-be recursively checked to try and find the root directory of a repository. If a
-search is false, traversing not be performed, and a repository will only be
-returned if the given path is the root of a repository.
+### Runtime information
 
-### Repository.checkoutHead(path)
+- `versions()` returns `{gitUtils: '10.0.0', napi: number, libgit2: '1.9.6', libgit2Features: number}`.
+- `configure({validateOwnership})` sets libgit2's process-wide repository ownership validation before the Git host begins serving work and returns the applied option.
 
-Restore the contents of a path in the working directory and index to the
-version at HEAD. Similar to running `git reset HEAD -- <path>` and then a
-`git checkout HEAD -- <path>`.
+### Read operations
 
-`path` - The string repository-relative path to checkout.
+- `snapshot(descriptor, options)` reads status and refs together. `options` accepts `status`, `refs`, `includeIgnored`, `generations`, `knownFingerprints`, and `signal`; status and refs default to enabled.
+- Each requested snapshot section is `{fingerprint, unchanged, value?}`. The fingerprint is a deterministic SHA-256 digest of the section value; `value` is omitted when its fingerprint matches `knownFingerprints.status` or `knownFingerprints.refs`.
+- `diff(descriptor, request)` supports commit, index, worktree and empty-tree pairs plus file/empty buffer pairs. `request.format` is `structured` by default and may be `patch` or `both`; `diffFilter` follows Git's uppercase-inclusion and lowercase-exclusion syntax; the result is `{schemaVersion: 1, files, rawPatch?}`.
+- `history(descriptor, request)` reads pathless history; `commit(descriptor, request)`, `blame(descriptor, request)`, `describe(descriptor, request)`, and `branchesContaining(descriptor, request)` read their corresponding repository metadata.
+- `readObjects(descriptor, requests, options)` batches `{oid}`, `{revision, path}` and `{source: 'index', path}` lookups and returns objects whose `content` is a Buffer.
+- `readConfig(descriptor, {keys, signal})` batches configuration lookups; `fileMode(descriptor, path, options)` reads an index mode; `submodulePaths(descriptor, options)` lists repository-relative submodule paths.
+- `lineDiff(oldBuffer, newBuffer, options)` computes line hunks without opening a repository. It accepts buffers or strings and the whitespace options `ignoreEolWhitespace`, `ignoreSpaceAtEOL`, `ignoreSpaceChange`, and `ignoreAllSpace`.
 
-Returns `true` if the checkout was successful, `false` otherwise.
+### Mutations
 
-### Repository.checkoutReference(reference, [create])
+`mutate(descriptor, request)` accepts only the native operation allowlist: `stageFileModeChange`, `stageFileSymlinkChange`, `setConfig`, `unsetConfig`, `addRemote`, `removeRemote`, `setRemoteUrl`, `deleteRef`, `createBlob`, `expandBlobToFile`, `mergeFile`, and `writeMergeConflictToIndex`. Mutations that require hooks, filters, signing, credential helpers, transports, or porcelain semantics belong to the system Git backend in Lumine.
 
-Checks out a branch in your repository.
+### Errors and cancellation
 
-`reference` - The string reference to checkout
-`create` - A Boolean value which, if `true` creates the new `reference` if it doesn't exist.
+Invalid JavaScript arguments reject with `ERR_GIT_NATIVE_ARGUMENT`. Native failures reject with an operation-specific `ERR_GIT_NATIVE_*` code and include `operation`, `libgit2Code`, `libgit2Class`, and `libgit2Message`. An aborted request rejects with `AbortError` and `ERR_GIT_NATIVE_ABORTED`; a result completed after cancellation is discarded.
 
-Returns `true` if the checkout was successful, `false` otherwise.
+Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 bytes follow Node's normal decoding policy and become U+FFFD, matching Lumine's system-Git process decoding; callers that require byte-exact non-UTF-8 path identity are unsupported.
 
-### Repository.getAheadBehindCount(branch)
+## Development
 
-Get the number of commits the branch is ahead/behind the remote branch it
-is tracking.  Similar to the commit numbers reported by `git status` when a
-remote tracking branch exists.
+- Clone the repository with its submodules, or run `npm run prepare` to hydrate libgit2.
+- Run `npm install` to build the addon for the current Node-API runtime.
+- Run `npm test` and `npm run lint` to verify the implementation.
+- Run `npm run benchmark -- <working-directory> [git-directory]` to emit native-only benchmark results as JSON.
 
-`branch` - The branch name to lookup ahead/behind counts for. (default: `HEAD`)
+## Changes in v10
 
-Returns an object with `ahead` and `behind` keys pointing to integer values
-that will always be >= 0.
-
-### Repository.getConfigValue(key)
-
-Get the config value of the given key.
-
-`key` - The string key to retrieve the value for.
-
-Returns the configuration value, may be `null`.
-
-### Repository.setConfigValue(key, value)
-
-Get the config value of the given key.
-
-`key` - The string key to set in the config.
-
-`value` - The string value to set in the config for the given key.
-
-Returns `true` if setting the config value was successful, `false` otherwise.
-
-### Repository.getDiffStats(path)
-
-Get the number of lines added and removed comparing the working directory
-contents of the given path to the HEAD version of the given path.
-
-`path` - The string repository-relative path to diff.
-
-Returns an object with `added` and `deleted` keys pointing to integer values
-that always be >= 0.
-
-### Repository.getHeadBlob(path)
-
-Get the blob contents of the given path at HEAD. Similar to
-`git show HEAD:<path>`.
-
-`path` - The string repository-relative path.
-
-Returns the string contents of the HEAD version of the path.
-
-### Repository.getHead()
-
-Get the reference or SHA-1 that HEAD points to such as `refs/heads/master`
-or a full SHA-1 if the repository is in a detached HEAD state.
-
-Returns the string reference name or SHA-1.
-
-### Repository.getIndexBlob(path)
-
-Get the blob contents of the given path in the index. Similar to
-`git show :<path>`.
-
-`path` - The string repository-relative path.
-
-Returns the string contents of the index version of the path.
-
-### Repository.getLineDiffs(path, text, [options])
-
-Get the line diffs comparing the HEAD version of the given path and the given
-text.
-
-`path` - The string repository-relative path.
-
-`text` - The string text to diff the HEAD contents of the path against.
-
-`options` - An optional object with the following keys:
-
-  * `ignoreSpaceAtEOL` - `true` to ignore changes in whitespace at the end of lines.
-    (ignoreEolWhitespace also works.)
-  * `ignoreSpaceChange` - `true` to ignore changes in amount of whitespace.
-    This ignores whitespace at line end, and considers all other sequences of
-    one or more whitespace characters to be equivalent.
-  * `ignoreAllSpace` - `true` to ignore whitespace when comparing lines.
-    This ignores differences even if one line has whitespace where the other line has none.
-  * `useIndex` - `true` to compare against the index version instead of the HEAD
-    version.
-
-Returns an array of objects that have `oldStart`, `oldLines`, `newStart`, and
-`newLines` keys pointing to integer values, may be `null` if the diff fails.
-
-### Repository.getLineDiffDetails(path, text, [options])
-
-Get the line diff details comparing the HEAD version of the given path and the given
-text.
-
-Takes the same arguments as `getLineDiffs`.
-
-Returns an array of objects which represent an old or new line in a diff. Every
-object has `oldStart`, `oldLines`, `newStart`, `newLines`, `oldLineNumber` and
-`newLineNumber` keys pointing to integer values, and a `line` key pointing to the
-respective line content. May be `null` if the diff fails.
-
-### Repository.getPath()
-
-Get the path of the repository.
-
-Returns the string absolute path of the opened repository.
-
-### Repository.getReferences()
-
-Gets all the local and remote references.
-
-Returns an object with three keys: `heads`, `remotes`, and `tags`.
-Each key can be an array of strings containing the reference names.
-
-### Repository.getReferenceTarget(ref)
-
-Get the target of the given reference.
-
-`ref` - The string reference.
-
-Returns the string target of the given reference.
-
-### Repository.getRemoteHead([remoteName])
-
-Get the branch that a remote's `HEAD` points to — i.e., the remote's default
-branch. This is the equivalent of `git symbolic-ref refs/remotes/<remoteName>/HEAD`.
-
-`remoteName` - The string name of the remote (default: `origin`).
-
-Returns the string reference name (e.g. `refs/remotes/origin/master`), or
-`null` if the remote has no `HEAD` reference.
-
-### Repository.getShortHead()
-
-Get a possibly shortened version of value returns by `getHead()`. This will
-remove leading segments of `refs/heads`, `refs/tags`, or `refs/remotes` and will
-also shorten the SHA-1 of a detached HEAD to 7 characters.
-
-Returns a string shortened reference name or SHA-1.
-
-### Repository.getStatus([path])
-
-Get the status of a single path or all paths in the repository.  This will not
-include ignored paths.
-
-`path` - An optional repository-relative path to limit the status reporting to.
-
-Returns an integer status number if a path is specified and returns an object
-with path keys and integer status values if no path is specified.
-
-### Repository.getSymbolicRefTarget(ref)
-
-Get the name of the reference that a symbolic reference points to, without
-resolving it any further. This is the equivalent of `git symbolic-ref <ref>`.
-
-`ref` - The string reference.
-
-Returns the string name of the reference that `ref` points to, or `null` if
-`ref` does not exist or is not a symbolic reference.
-
-### Repository.getUpstreamBranch([branch])
-
-Get the upstream branch of the given branch.
-
-`branch` - The branch to find the upstream branch of (default: `HEAD`)
-
-Returns the string upstream branch reference name.
-
-### Repository.getWorkingDirectory()
-
-Get the working directory of the repository.
-
-Returns the string absolute path to the repository's working directory.
-
-### Repository.isIgnored(path)
-
-Get the ignored status of a given path.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is ignored, `false` otherwise.
-
-### Repository.isPathModified(path)
-
-Get the modified status of a given path.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is modified, `false` otherwise.
-
-### Repository.isPathNew(path)
-
-Get the new status of a given path.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is new, `false` otherwise.
-
-### Repository.isPathDeleted(path)
-
-Get the deleted status of a given path.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is deleted, `false` otherwise.
-
-### Repository.isPathStaged(path)
-
-Get the staged status of a given path.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is staged in the index, `false` otherwise.
-
-### Repository.isStatusIgnored(status)
-
-Check if a status value represents an ignored path.
-
-`status` - The integer status value.
-
-Returns `true` if the status is a ignored one, `false` otherwise.
-
-### Repository.isStatusModified(status)
-
-Check if a status value represents a modified path.
-
-`status` - The integer status value.
-
-Returns `true` if the status is a modified one, `false` otherwise.
-
-### Repository.isStatusNew(status)
-
-Check if a status value represents a new path.
-
-`status` - The integer status value.
-
-Returns `true` if the status is a new one, `false` otherwise.
-
-### Repository.isStatusDeleted(status)
-
-Check if a status value represents a deleted path.
-
-`status` - The integer status value.
-
-Returns `true` if the status is a deleted one, `false` otherwise.
-
-### Repository.isStatusStaged(status)
-
-Check if a status value represents a changed that is staged in the index.
-
-`status` - The integer status value.
-
-Returns `true` if the status is a staged one, `false` otherwise.
-
-### Repository.isSubmodule(path)
-
-Check if the path is a submodule in the index.
-
-`path` - The string repository-relative path.
-
-Returns `true` if the path is a submodule, `false` otherwise.
-
-### Repository.refreshIndex()
-
-Reread the index to update any values that have changed since the last time the
-index was read.
-
-### Repository.relativize(path)
-
-Relativize the given path to the repository's working directory.
-
-`path` - The string path to relativize.
-
-Returns a repository-relative path if the given path is prefixed with the
-repository's working directory path.
-
-### Repository.isWorkingDirectory(path)
-
-Is the given path the repository's working directory?
-
-It is better to call this method than comparing a path directly against
-the value of `getWorkingDirectory()` since this method handles slash
-normalization on Windows, case insensitive filesystems, and symlinked
-repositories.
-
-`path` - The string path to check.
-
-Returns `true` if the given path is the repository's working directory,
-false otherwise.
-
-### Repository.release()
-
-Release the repository and close all file handles it has open.  No other methods
-can be called on the `Repository` object once it has been released.
-
-### Repository.submoduleForPath(path)
-
-Get the repository for the submodule that the path is located in.
-
-`path` - The absolute or repository-relative string path.
-
-Returns a `Repository` or `null` if the path isn't in a submodule.
-
-### Repository.add(path)
-
-Stage the changes in `path` into the repository's index. Clear any conflict state
-associated with `path`.
-
-`path` - A repository-relative string path.
-
-Raises an `Error` if the path isn't readable or if another exception occurs.
-
-## Changes
-
-This is the Lumine fork of `git-utils`, published under the `@lumine-code` scope. Relative to the upstream Pulsar package it:
-
-- Rebrands the package to `@lumine-code/git-utils` and releases it as a new major version.
-- Upgrades the bundled libgit2 from 1.8.5 to 1.9.4.
-- Builds the native addon at N-API 10 and swallows teardown-time callback exceptions to avoid renderer crashes on window teardown.
-- Makes `node-addon-api` a runtime dependency and handles libgit2 hydration during git-dependency installs.
-- Fixes Windows case-sensitivity and realpath handling in path comparison.
-- Honors repository negations of global ignore rules and applies the ignore-rule patch during native builds.
-- Adds dubious-ownership handling with a session bypass.
-- Modernizes dependencies onto the `@lumine-code` forks and drops `wrench` for native `fs.cpSync`/`fs.rmSync` in the specs.
-- Adds cross-platform CI and modernizes the publish workflows.
-- Updates the license attribution for Lumine.
+Version 10 removes the stateful `Repository`, `open()`, synchronous repository calls, and renderer-owned native handles. It adds a stateless Promise API, combined fingerprinted snapshots, structured diffs, batched reads, explicit native mutations, stable errors, cancellation, SHA-256 repository support, and libgit2 1.9.6.
 
 ## Contributing
 
-Got ideas to make this package better, found a bug, or want to help add new features? Just drop your thoughts on GitHub. Any feedback is welcome!
+Issues and pull requests are welcome at the GitHub repository.

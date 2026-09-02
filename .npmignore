@@ -1,11 +1,11 @@
-/build
+/benchmark
+/deps
 /spec
-/deps/libgit2/build
-/deps/libgit2/fuzzers
-/deps/libgit2/tests
-/deps/libgit2/tests-clar
 *.a
+*.lib
 *.o
+*.obj
+*.pdb
 *.coffee
 *.log
 *~

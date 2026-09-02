@@ -2,7 +2,7 @@
   "name": "@lumine-code/git-utils",
   "author": "lumine-code",
   "description": "Provides native Git repository utilities built on libgit2.",
-  "version": "9.0.0",
+  "version": "10.0.0",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
@@ -13,8 +13,13 @@
       "email": "gjtorikian@gmail.com"
     }
   ],
-  "repository": "https://github.com/lumine-code/git-utils",
-  "bugs": "https://github.com/lumine-code/git-utils/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lumine-code/git-utils.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lumine-code/git-utils/issues"
+  },
   "homepage": "https://github.com/lumine-code/git-utils",
   "keywords": [
     "git",
@@ -23,20 +28,24 @@
     "vcs"
   ],
   "main": "./src/git.js",
+  "files": [
+    "build/Release/git.node",
+    "scripts/install.js",
+    "src/git.js"
+  ],
   "devDependencies": {
     "jasmine": "^6.3.0",
-    "standard": "^17.1.2",
-    "temp": "~0.9.4",
-    "underscore": "^1.13.8"
+    "standard": "^17.1.2"
   },
   "dependencies": {
-    "@lumine-code/fs-plus": "https://github.com/lumine-code/fs-plus.git#742e3e166f56261189ff245a63967b8f1970fadd",
     "node-addon-api": "^8.9.0"
   },
   "scripts": {
+    "benchmark": "node benchmark/v10.js",
     "install": "node scripts/install.js",
     "lint": "standard --env jasmine src spec",
     "test": "jasmine spec/*-spec.js",
     "prepare": "node scripts/prepare.js"
-  }
+  },
+  "type": "commonjs"
 }
