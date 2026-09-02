@@ -611,6 +611,19 @@ static std::string StatusHeadJson(git_repository *repository) {
   return out.str();
 }
 
+static std::string ConfiguredUpstreamRef(git_repository *repository,
+                                         const std::string &branch);
+
+static std::string ShortTrackingRef(const std::string &reference) {
+  if (reference.rfind("refs/remotes/", 0) == 0) {
+    return reference.substr(std::strlen("refs/remotes/"));
+  }
+  if (reference.rfind("refs/heads/", 0) == 0) {
+    return reference.substr(std::strlen("refs/heads/"));
+  }
+  return reference;
+}
+
 static std::string StatusUpstreamJson(git_repository *repository) {
   git_reference *raw_head = nullptr;
   if (git_repository_head(&raw_head, repository) < 0 || !raw_head ||
@@ -623,7 +636,14 @@ static std::string StatusUpstreamJson(git_repository *repository) {
   git_reference *raw_upstream = nullptr;
   if (git_branch_upstream(&raw_upstream, head.get()) < 0) {
     git_error_clear();
-    return "null";
+    const char *branch_name = git_reference_shorthand(head.get());
+    std::string configured = branch_name
+      ? ConfiguredUpstreamRef(repository, branch_name) : "";
+    if (configured.empty()) return "null";
+    std::ostringstream out;
+    out << "{\"name\":" << JsonString(ShortTrackingRef(configured))
+        << ",\"ahead\":0,\"behind\":0}";
+    return out.str();
   }
   git_ptr<git_reference, git_reference_free> upstream(raw_upstream, git_reference_free);
   size_t ahead = 0, behind = 0;
@@ -860,10 +880,7 @@ static std::string BranchEntryJson(git_repository *repository, git_reference *re
   } else {
     git_error_clear();
     upstream_ref = ConfiguredUpstreamRef(repository, branch);
-    upstream_name = upstream_ref.rfind("refs/remotes/", 0) == 0
-      ? upstream_ref.substr(std::strlen("refs/remotes/")) :
-      (upstream_ref.rfind("refs/heads/", 0) == 0
-        ? upstream_ref.substr(std::strlen("refs/heads/")) : upstream_ref);
+    upstream_name = ShortTrackingRef(upstream_ref);
     upstream_gone = !upstream_ref.empty();
   }
   std::string push_ref = PushRef(repository, branch, upstream_ref);
@@ -878,10 +895,7 @@ static std::string BranchEntryJson(git_repository *repository, git_reference *re
       git_error_clear();
     }
   }
-  std::string push_name = push_ref.rfind("refs/remotes/", 0) == 0
-    ? push_ref.substr(std::strlen("refs/remotes/")) :
-    (push_ref.rfind("refs/heads/", 0) == 0
-      ? push_ref.substr(std::strlen("refs/heads/")) : push_ref);
+  std::string push_name = ShortTrackingRef(push_ref);
 
   std::ostringstream out;
   out << "{\"name\":" << JsonString(branch)
@@ -1159,6 +1173,10 @@ static int BuildRefsJson(std::string *json, git_repository *repository, const Re
         return locked_result;
       }
       std::string locked_reason = reason.ptr ? std::string(reason.ptr, reason.size) : "";
+      while (!locked_reason.empty() &&
+             (locked_reason.back() == '\n' || locked_reason.back() == '\r')) {
+        locked_reason.pop_back();
+      }
       git_buf_dispose(&reason);
       int prunable_result = git_worktree_is_prunable(worktree.get(), nullptr);
       if (prunable_result < 0) return prunable_result;
@@ -1988,7 +2006,7 @@ static int LineDiffHunkCallback(const git_diff_delta *, const git_diff_hunk *hun
   std::ostringstream out;
   out << "{\"oldStart\":" << hunk->old_start
       << ",\"oldLines\":" << hunk->old_lines
-      << ",\"newStart\":" << (hunk->new_lines == 0 && hunk->new_start > 0 ? hunk->new_start - 1 : hunk->new_start)
+      << ",\"newStart\":" << hunk->new_start
       << ",\"newLines\":" << hunk->new_lines << '}';
   result->hunks.push_back(out.str());
   return 0;

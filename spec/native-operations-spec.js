@@ -329,6 +329,26 @@ describe('native v10 operations', () => {
     expect(branch.push.ref).toBe('refs/remotes/team/origin/deploy')
   })
 
+  it('keeps configured gone upstreams in both status and refs snapshots', async () => {
+    runGit(fixture.workingDirectory, ['remote', 'add', 'origin', 'https://example.test/repo.git'])
+    runGit(fixture.workingDirectory, ['config', 'branch.master.remote', 'origin'])
+    runGit(fixture.workingDirectory, ['config', 'branch.master.merge', 'refs/heads/master'])
+    const snapshot = await git.snapshot(fixture.descriptor)
+    expect(snapshot.status.value.upstream).toEqual({
+      name: 'origin/master',
+      ahead: 0,
+      behind: 0
+    })
+    expect(snapshot.refs.value.branches.find(branch => branch.isHead).upstream)
+      .toEqual(jasmine.objectContaining({
+        ref: 'refs/remotes/origin/master',
+        name: 'origin/master',
+        ahead: 0,
+        behind: 0,
+        gone: true
+      }))
+  })
+
   it('includes primary, linked, and missing prunable worktrees', async () => {
     const suffix = `${process.pid}-${Date.now()}`
     const linked = path.join(os.tmpdir(), `git-utils-linked-${suffix}`)
@@ -336,6 +356,7 @@ describe('native v10 operations', () => {
     try {
       runGit(fixture.workingDirectory, ['worktree', 'add', '-b', 'linked-test', linked])
       runGit(fixture.workingDirectory, ['worktree', 'add', '-b', 'missing-test', missing])
+      runGit(fixture.workingDirectory, ['worktree', 'lock', '--reason', 'held for the spec', linked])
       fs.rmSync(missing, { recursive: true, force: true })
       const linkedGitDirectory = runGit(linked, ['rev-parse', '--absolute-git-dir']).stdout.trim()
       const refs = (await git.snapshot({
@@ -349,6 +370,11 @@ describe('native v10 operations', () => {
       ]))
       expect(refs.worktrees.find(entry => canonicalPath(entry.path) === canonicalPath(missing)).prunable)
         .toBeTrue()
+      expect(refs.worktrees.find(entry => canonicalPath(entry.path) === canonicalPath(linked)))
+        .toEqual(jasmine.objectContaining({
+          locked: true,
+          lockedReason: 'held for the spec'
+        }))
     } finally {
       fs.rmSync(linked, { recursive: true, force: true })
       fs.rmSync(missing, { recursive: true, force: true })
@@ -385,6 +411,15 @@ describe('native v10 operations', () => {
     }
     expect(error.name).toBe('AbortError')
     expect(error.code).toBe('ERR_GIT_NATIVE_ABORTED')
+  })
+
+  it('uses libgit2 deletion anchors without an extra offset', async () => {
+    expect(await git.lineDiff('a\nb\nc\n', 'a\nc\n')).toEqual([
+      { oldStart: 2, oldLines: 1, newStart: 1, newLines: 0 }
+    ])
+    expect(await git.lineDiff('a\nb\nc\n', 'b\nc\n')).toEqual([
+      { oldStart: 1, oldLines: 1, newStart: 0, newLines: 0 }
+    ])
   })
 
   it('uses Node UTF-8 replacement semantics for invalid POSIX path bytes', async () => {
