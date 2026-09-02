@@ -73,12 +73,19 @@ try {
   if (fs.existsSync(path.join(installed, 'build', 'Release', 'git.node'))) {
     throw new Error('The no-prebuilt package smoke unexpectedly installed git.node')
   }
+  if (fs.existsSync(path.join(installed, '.git'))) {
+    throw new Error('The packed install unexpectedly contains Git metadata')
+  }
 
-  const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js')
-  run(process.execPath, [nodeGyp, 'rebuild'], {
+  // npm prepares Git dependencies in a metadata-free staging directory where
+  // the submodule may not have been hydrated yet. Remove the packed copy to
+  // exercise install.js's exact-pin clone path before rebuilding.
+  fs.rmSync(path.join(installed, 'deps', 'libgit2'), { recursive: true, force: true })
+  run(process.execPath, [path.join(installed, 'scripts', 'install.js')], {
     cwd: installed,
     stdio: 'inherit'
   })
+  assertExists(path.join(installed, 'deps', 'libgit2', 'src', 'libgit2', 'repository.c'))
 
   const versions = JSON.parse(run(process.execPath, [
     '-e',

@@ -101,7 +101,8 @@ if (hasGitMetadata()) {
   ensureLibgit2Sources()
   run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
 } else if (!hasValidAddon()) {
-  if (fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath) && hasLibgit2Sources()) {
+  if (fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath)) {
+    ensureLibgit2Sources()
     run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
   } else {
     throw new Error('The git-utils package contains neither a compatible addon nor its build inputs')
