@@ -356,7 +356,7 @@ describe('native v10 operations', () => {
     try {
       runGit(fixture.workingDirectory, ['worktree', 'add', '-b', 'linked-test', linked])
       runGit(fixture.workingDirectory, ['worktree', 'add', '-b', 'missing-test', missing])
-      runGit(fixture.workingDirectory, ['worktree', 'lock', '--reason', 'held for the spec', linked])
+      runGit(fixture.workingDirectory, ['worktree', 'lock', '--reason', 'held for the spec', missing])
       fs.rmSync(missing, { recursive: true, force: true })
       const linkedGitDirectory = runGit(linked, ['rev-parse', '--absolute-git-dir']).stdout.trim()
       const refs = (await git.snapshot({
@@ -370,7 +370,7 @@ describe('native v10 operations', () => {
       ]))
       expect(refs.worktrees.find(entry => canonicalPath(entry.path) === canonicalPath(missing)).prunable)
         .toBeTrue()
-      expect(refs.worktrees.find(entry => canonicalPath(entry.path) === canonicalPath(linked)))
+      expect(refs.worktrees.find(entry => canonicalPath(entry.path) === canonicalPath(missing)))
         .toEqual(jasmine.objectContaining({
           locked: true,
           lockedReason: 'held for the spec'
@@ -423,7 +423,7 @@ describe('native v10 operations', () => {
   })
 
   it('uses Node UTF-8 replacement semantics for invalid POSIX path bytes', async () => {
-    if (process.platform === 'win32') return pending('Windows paths are Unicode')
+    if (process.platform !== 'linux') return pending('The byte-path fixture is Linux-only')
     const prefix = Buffer.from(`${fixture.workingDirectory}${path.sep}`)
     const invalidPath = Buffer.concat([prefix, Buffer.from([0x62, 0x61, 0x64, 0x80])])
     fs.writeFileSync(invalidPath, 'invalid path\n')

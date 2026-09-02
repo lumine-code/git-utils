@@ -1173,13 +1173,32 @@ static int BuildRefsJson(std::string *json, git_repository *repository, const Re
         return locked_result;
       }
       std::string locked_reason = reason.ptr ? std::string(reason.ptr, reason.size) : "";
+      const char *worktree_name = git_worktree_name(worktree.get());
+      const char *common_directory = git_repository_commondir(repository);
+      if (worktree_name && common_directory) {
+        std::string admin_locked_path = TrimTrailingSeparators(common_directory) +
+          "/worktrees/" + worktree_name + "/locked";
+        std::string admin_locked_reason;
+        if (ReadFile(admin_locked_path, &admin_locked_reason)) {
+          locked_result = 1;
+          locked_reason = std::move(admin_locked_reason);
+        }
+      }
       while (!locked_reason.empty() &&
              (locked_reason.back() == '\n' || locked_reason.back() == '\r')) {
         locked_reason.pop_back();
       }
       git_buf_dispose(&reason);
-      int prunable_result = git_worktree_is_prunable(worktree.get(), nullptr);
-      if (prunable_result < 0) return prunable_result;
+      int prunable_result;
+      if (git_worktree_validate(worktree.get()) < 0) {
+        // Core Git reports a missing worktree as prunable even when a locked
+        // marker prevents libgit2's policy-oriented is_prunable() check.
+        prunable_result = 1;
+        git_error_clear();
+      } else {
+        prunable_result = git_worktree_is_prunable(worktree.get(), nullptr);
+        if (prunable_result < 0) return prunable_result;
+      }
       git_repository *raw_worktree_repository = nullptr;
       if (git_repository_open(&raw_worktree_repository, path) == 0) {
         git_ptr<git_repository, git_repository_free> worktree_repository(raw_worktree_repository, git_repository_free);
