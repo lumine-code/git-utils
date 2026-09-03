@@ -32,6 +32,10 @@ function hasLibgit2Sources () {
   return fs.existsSync(libgit2Sentinel)
 }
 
+function hasBindingInputs () {
+  return fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath)
+}
+
 function hasValidAddon () {
   if (!fs.existsSync(addonPath)) return false
   const validation = childProcess.spawnSync(process.execPath, [
@@ -93,15 +97,22 @@ function ensureLibgit2Sources () {
   checkoutPinnedLibgit2()
 }
 
+// Script-suppressed application installs invoke this mode explicitly before
+// electron-rebuild. It hydrates the exact libgit2 sources without compiling
+// for npm's host runtime first.
+if (process.argv.includes('--prepare-build')) {
+  if (!hasBindingInputs()) {
+    throw new Error('The git-utils package does not contain its native build inputs')
+  }
+  ensureLibgit2Sources()
 // A source checkout always rebuilds so edits and a freshly hydrated submodule
 // are reflected. Packed installs prefer their compatible Node-API binary, but
-// keep the complete build inputs so electron-rebuild (and script-suppressed
-// application installs) can compile for their target runtime later.
-if (hasGitMetadata()) {
+// can hydrate and compile from their complete build inputs when needed.
+} else if (hasGitMetadata()) {
   ensureLibgit2Sources()
   run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
 } else if (!hasValidAddon()) {
-  if (fs.existsSync(bindingPath) && fs.existsSync(nativeSourcePath)) {
+  if (hasBindingInputs()) {
     ensureLibgit2Sources()
     run('node-gyp', ['rebuild'], { shell: process.platform === 'win32' })
   } else {

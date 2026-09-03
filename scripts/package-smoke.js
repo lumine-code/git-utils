@@ -77,15 +77,34 @@ try {
     throw new Error('The packed install unexpectedly contains Git metadata')
   }
 
-  // npm prepares Git dependencies in a metadata-free staging directory where
-  // the submodule may not have been hydrated yet. Remove the packed copy to
-  // exercise install.js's exact-pin clone path before rebuilding.
+  // Script-suppressed Git dependencies can reach application prebuild without
+  // a hydrated submodule. Prepare-build must clone the exact pin and stop
+  // before compiling for npm's host runtime.
+  fs.rmSync(path.join(installed, 'deps', 'libgit2'), { recursive: true, force: true })
+  run(process.execPath, [path.join(installed, 'scripts', 'install.js'), '--prepare-build'], {
+    cwd: installed,
+    stdio: 'inherit'
+  })
+  assertExists(path.join(installed, 'deps', 'libgit2', 'src', 'libgit2', 'repository.c'))
+  const preparedRevision = run('git', [
+    '-C', path.join(installed, 'deps', 'libgit2'), 'rev-parse', 'HEAD'
+  ]).trim()
+  if (preparedRevision !== '26055f5af74ab1cf636d272e8a34315496d3f06f') {
+    throw new Error(`Prepare-build hydrated unexpected libgit2 revision: ${preparedRevision}`)
+  }
+  if (fs.existsSync(path.join(installed, 'build', 'Release', 'git.node'))) {
+    throw new Error('Prepare-build unexpectedly compiled git.node')
+  }
+
+  // Ordinary install mode must independently recover the same missing source
+  // staging state and then compile a loadable addon.
   fs.rmSync(path.join(installed, 'deps', 'libgit2'), { recursive: true, force: true })
   run(process.execPath, [path.join(installed, 'scripts', 'install.js')], {
     cwd: installed,
     stdio: 'inherit'
   })
   assertExists(path.join(installed, 'deps', 'libgit2', 'src', 'libgit2', 'repository.c'))
+  assertExists(path.join(installed, 'build', 'Release', 'git.node'))
 
   const versions = JSON.parse(run(process.execPath, [
     '-e',

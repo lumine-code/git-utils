@@ -12,7 +12,7 @@ Backend selection is static, not a fallback: Lumine uses this addon for native-f
 npm install @lumine-code/git-utils
 ```
 
-Lumine pins this repository by commit rather than installing a registry release. The package contains the Node-API addon at `build/Release/git.node` and the exact binding/libgit2 inputs needed by `node-gyp` or `electron-rebuild`. A compatible packaged addon skips redundant compilation; source checkouts always rebuild, while script-suppressed application installs can rebuild later from the shipped inputs. Intermediate `.lib`, `.obj`, and `.pdb` products are never shipped.
+Lumine pins this repository by commit rather than installing a registry release. The package contains the Node-API addon at `build/Release/git.node` and the exact binding/libgit2 inputs needed by `node-gyp` or `electron-rebuild`. A compatible packaged addon skips redundant compilation; source checkouts always rebuild. Script-suppressed application installs run `node scripts/install.js --prepare-build` to hydrate the exact libgit2 pin without compiling before `electron-rebuild`. Intermediate `.lib`, `.obj`, and `.pdb` products are never shipped.
 
 ## API
 
