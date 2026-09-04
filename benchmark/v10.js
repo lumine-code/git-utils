@@ -68,7 +68,7 @@ async function main () {
       arch: process.arch,
       versions: git.versions()
     },
-    routingNote: 'Lumine statically routes status and worktree diffs to system Git for repositories that declare submodules.',
+    routingNote: 'Lumine statically routes status and index/commit-to-worktree diffs to system Git; git-utils remains a replaceable accelerator for measured capabilities.',
     warmups,
     samples,
     operations: results
