@@ -10,13 +10,13 @@ Lumine briefly evaluated this backend against system Git. Native metadata reads 
 
 The remaining documentation describes the archived 10.0.0 API for historical reference.
 
-## Installation
+## Historical installation
 
 ```sh
 npm install @lumine-code/git-utils
 ```
 
-Lumine pins this repository by commit rather than installing a registry release. The package contains the Node-API addon at `build/Release/git.node` and the exact binding/libgit2 inputs needed by `node-gyp` or `electron-rebuild`. A compatible packaged addon skips redundant compilation; source checkouts always rebuild. Script-suppressed application installs run `node scripts/install.js --prepare-build` to hydrate the exact libgit2 pin without compiling before `electron-rebuild`. Intermediate `.lib`, `.obj`, and `.pdb` products are never shipped.
+Lumine pinned the 10.0.0 release by commit rather than installing a registry release. The package contained the Node-API addon at `build/Release/git.node` and the exact binding/libgit2 inputs needed by `node-gyp` or `electron-rebuild`. A compatible packaged addon skipped redundant compilation; source checkouts always rebuilt. Script-suppressed application installs ran `node scripts/install.js --prepare-build` to hydrate the exact libgit2 pin without compiling before `electron-rebuild`. Intermediate `.lib`, `.obj`, and `.pdb` products were not shipped.
 
 ## API
 
@@ -58,7 +58,7 @@ An oversized diff rejects with `ERR_GIT_NATIVE_DIFF_TOO_LARGE` and the fields `m
 
 Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 bytes follow Node's normal decoding policy and become U+FFFD, matching Lumine's system-Git process decoding; callers that require byte-exact non-UTF-8 path identity are unsupported.
 
-## Development
+## Historical development
 
 - Clone the repository with its submodules, or run `npm run prepare` to hydrate libgit2.
 - Run `npm install` to build the addon for the current Node-API runtime.
@@ -70,6 +70,4 @@ Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 byte
 
 Version 10 removes the stateful `Repository`, `open()`, synchronous repository calls, and renderer-owned native handles. It adds a stateless Promise API, combined fingerprinted snapshots, structured diffs, batched reads, explicit native mutations, stable errors, cancellation, SHA-256 repository support, and libgit2 1.9.6.
 
-## Contributing
-
-Issues and pull requests are welcome at the GitHub repository.
+This repository is retained for historical reference and no longer accepts maintenance changes.
