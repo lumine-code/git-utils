@@ -21,12 +21,12 @@ Lumine pins this repository by commit rather than installing a registry release.
 ## API
 
 ```js
-const git = require('@lumine-code/git-utils')
+const git = require("@lumine-code/git-utils");
 
 const descriptor = {
-  gitDirectory: '/workspace/project/.git',
-  workingDirectory: '/workspace/project'
-}
+  gitDirectory: "/workspace/project/.git",
+  workingDirectory: "/workspace/project",
+};
 ```
 
 A descriptor supplies the exact Git directory and working directory. `git-utils` never searches parent directories. `workingDirectory` may be `null` for a bare repository. Every repository operation returns a Promise, opens the repository for that operation, and releases all native handles before settling; `versions()` and the process-wide `configure()` are synchronous.
