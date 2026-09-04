@@ -4,9 +4,11 @@ Provides native Git repository utilities built on libgit2.
 
 This project is retired and archived. Lumine now uses the system Git executable for repository operations, and this native backend is no longer maintained.
 
-`git-utils` is Lumine's stateless, asynchronous native backend for repository operations where avoiding a system Git process materially improves latency. It uses libgit2 1.9.6 and exposes no repository handles to callers.
+The final release provided a stateless, asynchronous native backend based on libgit2 1.9.6 and exposed no repository handles to callers.
 
-Backend selection is static, not a fallback: Lumine keeps status, index/commit-to-worktree diffs, safe mutations, path-follow history, network operations, hooks, filters, signing and porcelain behavior on system Git. Measured native accelerators such as refs, bulk object/config reads, pathless history, blame, tree/index diffs and line diff remain candidates for this backend behind Lumine's replaceable adapter contract.
+Lumine briefly evaluated this backend against system Git. Native metadata reads were faster, but status and worktree diffs were substantially slower, while build, packaging, and maintenance costs remained high. Lumine therefore returned all repository operations to system Git.
+
+The remaining documentation describes the archived 10.0.0 API for historical reference.
 
 ## Installation
 
