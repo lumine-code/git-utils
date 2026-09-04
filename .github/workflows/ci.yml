@@ -38,3 +38,6 @@ jobs:
         run: npm run lint && npm test
       - name: Validate package contents
         run: npm pack --dry-run
+      - name: Smoke-test the packed dependency
+        if: matrix.node == 24
+        run: npm run test:package
