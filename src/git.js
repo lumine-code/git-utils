@@ -182,6 +182,10 @@ exports.diff = async function diff (descriptor, request = {}) {
   if (!['structured', 'patch', 'both'].includes(format)) {
     throw nativeError('diff', `Unsupported diff format: ${format}`)
   }
+  if (request.maxBytes != null &&
+      (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 0)) {
+    throw nativeError('diff', 'maxBytes must be a non-negative safe integer or null')
+  }
   const native = await invoke('diff', descriptor, { ...request, format }, request.signal)
   const result = { schemaVersion: 1, files: native.files }
   if (format === 'patch' || format === 'both') result.rawPatch = native.rawPatch

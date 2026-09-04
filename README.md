@@ -36,8 +36,8 @@ A descriptor supplies the exact Git directory and working directory. `git-utils`
 
 - `snapshot(descriptor, options)` reads status and refs together. `options` accepts `status`, `refs`, `includeIgnored`, `generations`, `knownFingerprints`, and `signal`; status and refs default to enabled.
 - Each requested snapshot section is `{fingerprint, unchanged, value?}`. The fingerprint is a deterministic SHA-256 digest of the section value; `value` is omitted when its fingerprint matches `knownFingerprints.status` or `knownFingerprints.refs`.
-- `diff(descriptor, request)` supports commit, index, worktree and empty-tree pairs plus file/empty buffer pairs. `request.format` is `structured` by default and may be `patch` or `both`; `diffFilter` follows Git's uppercase-inclusion and lowercase-exclusion syntax; the result is `{schemaVersion: 1, files, rawPatch?}`.
-- `history(descriptor, request)` reads pathless history; `commit(descriptor, request)`, `blame(descriptor, request)`, `describe(descriptor, request)`, and `branchesContaining(descriptor, request)` read their corresponding repository metadata.
+- `diff(descriptor, request)` supports commit, index, worktree and empty-tree pairs plus file/empty buffer pairs. `request.format` is `structured` by default and may be `patch` or `both`; `diffFilter` follows Git's uppercase-inclusion and lowercase-exclusion syntax; `maxBytes` stops native structured or patch construction when either requested representation exceeds the limit. The result is `{schemaVersion: 1, files, rawPatch?}`.
+- `history(descriptor, request)` reads pathless history; `allRefs: true` walks every local, remote, and tag ref with shared commits deduplicated. `commit(descriptor, request)`, `blame(descriptor, request)`, `describe(descriptor, request)`, and `branchesContaining(descriptor, request)` read their corresponding repository metadata.
 - `readObjects(descriptor, requests, options)` batches `{oid}`, `{revision, path}` and `{source: 'index', path}` lookups and returns objects whose `content` is a Buffer.
 - `readConfig(descriptor, {keys, signal})` batches configuration lookups; `fileMode(descriptor, path, options)` reads an index mode; `submodulePaths(descriptor, options)` lists repository-relative submodule paths.
 - `lineDiff(oldBuffer, newBuffer, options)` computes line hunks without opening a repository. It accepts buffers or strings and the whitespace options `ignoreEolWhitespace`, `ignoreSpaceAtEOL`, `ignoreSpaceChange`, and `ignoreAllSpace`.
@@ -49,6 +49,8 @@ A descriptor supplies the exact Git directory and working directory. `git-utils`
 ### Errors and cancellation
 
 Invalid JavaScript arguments reject with `ERR_GIT_NATIVE_ARGUMENT`. Native failures reject with an operation-specific `ERR_GIT_NATIVE_*` code and include `operation`, `libgit2Code`, `libgit2Class`, and `libgit2Message`. An aborted request rejects with `AbortError` and `ERR_GIT_NATIVE_ABORTED`; a result completed after cancellation is discarded.
+
+An oversized diff rejects with `ERR_GIT_NATIVE_DIFF_TOO_LARGE` and the fields `maxBytes`, `structuredBytes`, and `patchBytes`; it never switches to system Git.
 
 Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 bytes follow Node's normal decoding policy and become U+FFFD, matching Lumine's system-Git process decoding; callers that require byte-exact non-UTF-8 path identity are unsupported.
 

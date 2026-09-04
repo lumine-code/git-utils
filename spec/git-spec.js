@@ -100,6 +100,12 @@ describe('git-utils v10', () => {
       expect(diffError.code).toBe('ERR_GIT_NATIVE_ARGUMENT')
       expect(diffError.operation).toBe('diff')
 
+      for (const maxBytes of [-1, 1.5, Infinity, '10']) {
+        const limitError = await rejectionOf(git.diff(descriptor, { maxBytes }))
+        expect(limitError.code).toBe('ERR_GIT_NATIVE_ARGUMENT')
+        expect(limitError.operation).toBe('diff')
+      }
+
       const objectsError = await rejectionOf(git.readObjects(descriptor, {}))
       expect(objectsError.code).toBe('ERR_GIT_NATIVE_ARGUMENT')
       expect(objectsError.operation).toBe('readObjects')

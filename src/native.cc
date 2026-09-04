@@ -90,11 +90,13 @@ struct Request {
   bool add = false;
   bool replace_all = false;
   bool all = false;
+  bool all_refs = false;
   int context = 3;
   int limit = -1;
   int skip = 0;
   int status_generation = 1;
   int refs_generation = 1;
+  int64_t max_bytes = -1;
   std::shared_ptr<std::atomic_bool> cancelled;
 };
 
@@ -102,6 +104,37 @@ struct Failure {
   int code = 0;
   int klass = 0;
   std::string message;
+};
+
+struct DiffBudget {
+  int64_t max_bytes = -1;
+  uint64_t structured_bytes = 0;
+  uint64_t patch_bytes = 0;
+  bool exceeded = false;
+
+  bool CheckStructured(uint64_t bytes) {
+    structured_bytes = bytes;
+    if (max_bytes >= 0 && bytes > static_cast<uint64_t>(max_bytes)) {
+      exceeded = true;
+      git_error_set_str(GIT_ERROR_CALLBACK, "native Git structured diff exceeded maxBytes");
+      return false;
+    }
+    return true;
+  }
+
+  bool AppendPatch(std::string *target, const char *data, size_t size, char prefix = 0) {
+    const uint64_t added = static_cast<uint64_t>(size) + (prefix ? 1 : 0);
+    const uint64_t projected = patch_bytes + added;
+    patch_bytes = projected;
+    if (max_bytes >= 0 && projected > static_cast<uint64_t>(max_bytes)) {
+      exceeded = true;
+      git_error_set_str(GIT_ERROR_CALLBACK, "native Git patch diff exceeded maxBytes");
+      return false;
+    }
+    if (prefix) target->push_back(prefix);
+    target->append(data, size);
+    return true;
+  }
 };
 
 static std::mutex cancellation_mutex;
@@ -268,6 +301,11 @@ static int IntProperty(const Napi::Object &object, const char *key, int fallback
   return value.IsNumber() ? value.As<Napi::Number>().Int32Value() : fallback;
 }
 
+static int64_t Int64Property(const Napi::Object &object, const char *key, int64_t fallback) {
+  Napi::Value value = object.Get(key);
+  return value.IsNumber() ? value.As<Napi::Number>().Int64Value() : fallback;
+}
+
 static std::vector<std::string> StringArrayProperty(const Napi::Object &object, const char *key) {
   std::vector<std::string> result;
   Napi::Value value = object.Get(key);
@@ -347,11 +385,13 @@ static Request ParseRequest(const Napi::CallbackInfo &info) {
   result.add = BoolProperty(request, "add");
   result.replace_all = BoolProperty(request, "replaceAll");
   result.all = BoolProperty(request, "all");
+  result.all_refs = BoolProperty(request, "allRefs");
   result.context = IntProperty(request, "context", 3);
   result.limit = IntProperty(request, "limit", -1);
   result.skip = IntProperty(request, "skip", 0);
   result.status_generation = IntProperty(request, "statusGeneration", 1);
   result.refs_generation = IntProperty(request, "refsGeneration", 1);
+  result.max_bytes = Int64Property(request, "maxBytes", -1);
 
   Napi::Value requests_value = request.Get("requests");
   if (requests_value.IsArray()) {
@@ -1387,7 +1427,14 @@ static bool PatchHasMeaningfulChange(git_patch *patch) {
     delta->new_file.mode == GIT_FILEMODE_COMMIT;
 }
 
-static int StructuredPatchJson(std::string *json, git_patch *patch) {
+static int AppendStructured(std::string *target, const std::string &piece,
+                            DiffBudget *budget, uint64_t completed_bytes) {
+  target->append(piece);
+  return budget->CheckStructured(completed_bytes + target->size()) ? 0 : GIT_EBUFS;
+}
+
+static int StructuredPatchJson(std::string *json, git_patch *patch,
+                               DiffBudget *budget, uint64_t completed_bytes) {
   const git_diff_delta *delta = git_patch_get_delta(patch);
   if (!delta) {
     git_error_set_str(GIT_ERROR_INVALID, "diff patch has no delta");
@@ -1396,17 +1443,48 @@ static int StructuredPatchJson(std::string *json, git_patch *patch) {
   std::string old_path = delta->old_file.path ? delta->old_file.path : "";
   std::string new_path = delta->new_file.path ? delta->new_file.path : "";
   std::string status = DeltaStatusName(delta->status);
-  std::vector<std::string> hunks;
+  const bool rename = delta->status == GIT_DELTA_RENAMED || delta->status == GIT_DELTA_COPIED;
+  const bool binary = (delta->flags & GIT_DIFF_FLAG_BINARY) != 0;
+  std::ostringstream header;
+  header << "{\"oldPath\":" << (delta->status == GIT_DELTA_ADDED ? "null" : JsonString(old_path))
+         << ",\"newPath\":" << (delta->status == GIT_DELTA_DELETED ? "null" : JsonString(new_path))
+         << ",\"status\":" << JsonString(status)
+         << ",\"similarity\":" << (rename ? std::to_string(delta->similarity) : "null")
+         << ",\"binary\":" << (binary ? "true" : "false")
+         << ",\"oldMode\":" << (delta->old_file.mode ? JsonString(ModeString(delta->old_file.mode)) : "null")
+         << ",\"newMode\":" << (delta->new_file.mode ? JsonString(ModeString(delta->new_file.mode)) : "null")
+         << ",\"hunks\":[";
+  std::string output;
+  int error = AppendStructured(&output, header.str(), budget, completed_bytes);
+  if (error < 0) return error;
+
   for (size_t hunk_index = 0; hunk_index < git_patch_num_hunks(patch); ++hunk_index) {
     const git_diff_hunk *hunk = nullptr;
     size_t line_count = 0;
-    int error = git_patch_get_hunk(&hunk, &line_count, patch, hunk_index);
+    error = git_patch_get_hunk(&hunk, &line_count, patch, hunk_index);
     if (error < 0) return error;
     if (!hunk) {
       git_error_set_str(GIT_ERROR_INVALID, "diff patch returned a null hunk");
       return GIT_EINVALID;
     }
-    std::vector<std::string> lines;
+    std::string header(hunk->header, hunk->header_len);
+    size_t marker = header.find("@@", 2);
+    std::string heading;
+    if (marker != std::string::npos) {
+      heading = header.substr(marker + 2);
+      while (!heading.empty() && std::isspace(static_cast<unsigned char>(heading.front()))) heading.erase(heading.begin());
+      while (!heading.empty() && std::isspace(static_cast<unsigned char>(heading.back()))) heading.pop_back();
+    }
+    std::ostringstream hunk_header;
+    if (hunk_index > 0) hunk_header << ',';
+    hunk_header << "{\"oldStart\":" << hunk->old_start << ",\"oldLines\":" << hunk->old_lines
+                << ",\"newStart\":" << hunk->new_start << ",\"newLines\":" << hunk->new_lines
+                << ",\"heading\":" << (heading.empty() ? "null" : JsonString(heading))
+                << ",\"lines\":[";
+    error = AppendStructured(&output, hunk_header.str(), budget, completed_bytes);
+    if (error < 0) return error;
+
+    size_t included_line_count = 0;
     for (size_t line_index = 0; line_index < line_count; ++line_index) {
       const git_diff_line *line = nullptr;
       error = git_patch_get_line_in_hunk(&line, patch, hunk_index, line_index);
@@ -1425,43 +1503,53 @@ static int StructuredPatchJson(std::string *json, git_patch *patch) {
         case GIT_DIFF_LINE_CONTEXT_EOFNL: kind = "nonewline"; break;
         default: continue;
       }
-      lines.push_back("{\"kind\":" + JsonString(kind) + ",\"text\":" +
-                      (kind == "nonewline" ? "\"\"" : JsonString(TrimDiffLine(line))) + '}');
+      std::string line_json = (included_line_count++ > 0 ? "," : "") +
+        std::string("{\"kind\":") + JsonString(kind) + ",\"text\":" +
+        (kind == "nonewline" ? "\"\"" : JsonString(TrimDiffLine(line))) + '}';
+      error = AppendStructured(&output, line_json, budget, completed_bytes);
+      if (error < 0) return error;
     }
-    std::string header(hunk->header, hunk->header_len);
-    size_t marker = header.find("@@", 2);
-    std::string heading;
-    if (marker != std::string::npos) {
-      heading = header.substr(marker + 2);
-      while (!heading.empty() && std::isspace(static_cast<unsigned char>(heading.front()))) heading.erase(heading.begin());
-      while (!heading.empty() && std::isspace(static_cast<unsigned char>(heading.back()))) heading.pop_back();
-    }
-    std::ostringstream out;
-    out << "{\"oldStart\":" << hunk->old_start << ",\"oldLines\":" << hunk->old_lines
-        << ",\"newStart\":" << hunk->new_start << ",\"newLines\":" << hunk->new_lines
-        << ",\"heading\":" << (heading.empty() ? "null" : JsonString(heading))
-        << ",\"lines\":[" << Join(lines) << "]}";
-    hunks.push_back(out.str());
+    error = AppendStructured(&output, "]}", budget, completed_bytes);
+    if (error < 0) return error;
   }
-  const bool rename = delta->status == GIT_DELTA_RENAMED || delta->status == GIT_DELTA_COPIED;
-  const bool binary = (delta->flags & GIT_DIFF_FLAG_BINARY) != 0;
-  std::ostringstream out;
-  out << "{\"oldPath\":" << (delta->status == GIT_DELTA_ADDED ? "null" : JsonString(old_path))
-      << ",\"newPath\":" << (delta->status == GIT_DELTA_DELETED ? "null" : JsonString(new_path))
-      << ",\"status\":" << JsonString(status)
-      << ",\"similarity\":" << (rename ? std::to_string(delta->similarity) : "null")
-      << ",\"binary\":" << (binary ? "true" : "false")
-      << ",\"oldMode\":" << (delta->old_file.mode ? JsonString(ModeString(delta->old_file.mode)) : "null")
-      << ",\"newMode\":" << (delta->new_file.mode ? JsonString(ModeString(delta->new_file.mode)) : "null")
-      << ",\"hunks\":[" << Join(hunks) << "]}";
-  *json = out.str();
+  error = AppendStructured(&output, "]}", budget, completed_bytes);
+  if (error < 0) return error;
+  *json = std::move(output);
   return 0;
 }
 
+struct PatchPrintPayload {
+  std::string *output;
+  DiffBudget *budget;
+};
+
+static int AppendPatchLine(const git_diff_delta *, const git_diff_hunk *,
+                           const git_diff_line *line, void *payload) {
+  auto *state = static_cast<PatchPrintPayload *>(payload);
+  char prefix = 0;
+  if (line->origin == GIT_DIFF_LINE_ADDITION ||
+      line->origin == GIT_DIFF_LINE_DELETION ||
+      line->origin == GIT_DIFF_LINE_CONTEXT) {
+    prefix = line->origin;
+  }
+  return state->budget->AppendPatch(
+    state->output,
+    line->content ? line->content : "",
+    line->content_len,
+    prefix
+  ) ? 0 : GIT_EBUFS;
+}
+
+static int AppendPatch(std::string *output, git_patch *patch, DiffBudget *budget) {
+  PatchPrintPayload payload{output, budget};
+  return git_patch_print(patch, AppendPatchLine, &payload);
+}
+
 static int BuildSelectedDiff(std::string *files_json, std::string *raw_patch,
-                             git_diff *diff, const Request &request) {
+                             git_diff *diff, const Request &request, DiffBudget *budget) {
   std::vector<std::string> files;
   std::string patch_text;
+  uint64_t structured_bytes = 2;
   const bool all_or_none = request.diff_filter.find('*') != std::string::npos;
   bool select_all = false;
   if (all_or_none) {
@@ -1484,31 +1572,28 @@ static int BuildSelectedDiff(std::string *files_json, std::string *raw_patch,
     if (!PatchHasMeaningfulChange(patch.get())) continue;
     if (request.format != "patch") {
       std::string file;
-      error = StructuredPatchJson(&file, patch.get());
+      const uint64_t completed_bytes = structured_bytes + (files.empty() ? 0 : 1);
+      error = StructuredPatchJson(&file, patch.get(), budget, completed_bytes);
       if (error < 0) return error;
       files.push_back(std::move(file));
+      structured_bytes = completed_bytes + files.back().size();
     }
     if (request.format != "structured") {
-      git_buf buffer = GIT_BUF_INIT;
-      error = git_patch_to_buf(&buffer, patch.get());
-      if (error < 0) {
-        git_buf_dispose(&buffer);
-        return error;
-      }
-      if (buffer.ptr) patch_text.append(buffer.ptr, buffer.size);
-      git_buf_dispose(&buffer);
+      error = AppendPatch(&patch_text, patch.get(), budget);
+      if (error < 0) return error;
     }
   }
   *files_json = '[' + Join(files) + ']';
+  if (files.empty()) budget->structured_bytes = 0;
   *raw_patch = std::move(patch_text);
   return 0;
 }
 
-static int BuildDiffJson(std::string *json, git_repository *repository, const Request &request) {
+static int BuildDiffJson(std::string *json, git_repository *repository, const Request &request,
+                         DiffBudget *budget) {
   git_diff_options options;
   std::vector<char *> pathspec;
   ConfigureDiffOptions(&options, request, &pathspec);
-  git_buf patch_buffer = GIT_BUF_INIT;
   std::string files = "[]";
   std::string raw_patch;
   int error = 0;
@@ -1527,9 +1612,9 @@ static int BuildDiffJson(std::string *json, git_repository *repository, const Re
       git_error_set_str(GIT_ERROR_OS, "unable to read new diff file");
       return GIT_ERROR;
     }
-    git_patch *raw_patch = nullptr;
+    git_patch *raw_patch_object = nullptr;
     error = git_patch_from_buffers(
-      &raw_patch,
+      &raw_patch_object,
       request.from.type == "empty" ? nullptr : old_content.data(), old_content.size(),
       request.from.type == "empty" ? nullptr : request.from.path.c_str(),
       request.to.type == "empty" ? nullptr : new_content.data(), new_content.size(),
@@ -1537,31 +1622,27 @@ static int BuildDiffJson(std::string *json, git_repository *repository, const Re
       &options
     );
     if (error < 0) return error;
-    git_ptr<git_patch, git_patch_free> patch(raw_patch, git_patch_free);
+    git_ptr<git_patch, git_patch_free> patch(raw_patch_object, git_patch_free);
     const git_diff_delta *delta = patch ? git_patch_get_delta(patch.get()) : nullptr;
     if (patch && PatchHasMeaningfulChange(patch.get()) &&
         DeltaMatchesFilter(delta, request.diff_filter)) {
       if (request.format != "patch") {
         std::string file;
-        error = StructuredPatchJson(&file, patch.get());
+        error = StructuredPatchJson(&file, patch.get(), budget, 2);
         if (error < 0) return error;
         files = '[' + file + ']';
       }
-      if (request.format != "structured") error = git_patch_to_buf(&patch_buffer, patch.get());
+      if (request.format != "structured") error = AppendPatch(&raw_patch, patch.get(), budget);
     }
   } else {
     git_diff *raw_diff = nullptr;
     error = BuildRepositoryDiff(&raw_diff, repository, request, &options);
     if (error < 0) return error;
     git_ptr<git_diff, git_diff_free> diff(raw_diff, git_diff_free);
-    error = BuildSelectedDiff(&files, &raw_patch, diff.get(), request);
+    error = BuildSelectedDiff(&files, &raw_patch, diff.get(), request, budget);
   }
-  if (error < 0) {
-    git_buf_dispose(&patch_buffer);
-    return error;
-  }
-  if (patch_buffer.ptr) raw_patch.assign(patch_buffer.ptr, patch_buffer.size);
-  git_buf_dispose(&patch_buffer);
+  if (error < 0) return error;
+  if (files == "[]") budget->structured_bytes = 0;
   std::ostringstream out;
   out << "{\"files\":" << files;
   if (request.format != "structured") out << ",\"rawPatch\":" << JsonString(raw_patch);
@@ -1628,20 +1709,51 @@ static int CommitFilesJson(std::string *json, git_repository *repository, git_co
 }
 
 static int BuildHistoryJson(std::string *json, git_repository *repository, const Request &request) {
-  git_commit *raw_start = nullptr;
-  int error = ResolveCommit(&raw_start, repository, request.revision);
-  if (error == GIT_EUNBORNBRANCH || error == GIT_ENOTFOUND) {
-    git_error_clear();
-    *json = "[]";
-    return 0;
-  }
-  if (error < 0) return error;
-  git_ptr<git_commit, git_commit_free> start(raw_start, git_commit_free);
   git_revwalk *raw_walk = nullptr;
-  if ((error = git_revwalk_new(&raw_walk, repository)) < 0) return error;
+  int error = git_revwalk_new(&raw_walk, repository);
+  if (error < 0) return error;
   git_ptr<git_revwalk, git_revwalk_free> walk(raw_walk, git_revwalk_free);
   git_revwalk_sorting(walk.get(), GIT_SORT_TIME | GIT_SORT_TOPOLOGICAL);
-  if ((error = git_revwalk_push(walk.get(), git_commit_id(start.get()))) < 0) return error;
+
+  if (request.all_refs) {
+    git_reference_iterator *raw_iterator = nullptr;
+    if ((error = git_reference_iterator_new(&raw_iterator, repository)) < 0) return error;
+    git_ptr<git_reference_iterator, git_reference_iterator_free> iterator(
+      raw_iterator,
+      git_reference_iterator_free
+    );
+    git_reference *raw_reference = nullptr;
+    while ((error = git_reference_next(&raw_reference, iterator.get())) == 0) {
+      if (IsCancelled(request)) return GIT_EUSER;
+      git_ptr<git_reference, git_reference_free> reference(raw_reference, git_reference_free);
+      raw_reference = nullptr;
+      git_object *raw_commit = nullptr;
+      int peel_error = git_reference_peel(&raw_commit, reference.get(), GIT_OBJECT_COMMIT);
+      if (peel_error == GIT_ENOTFOUND || peel_error == GIT_EINVALIDSPEC ||
+          peel_error == GIT_EPEEL) {
+        git_error_clear();
+        continue;
+      }
+      if (peel_error < 0) return peel_error;
+      git_ptr<git_object, git_object_free> commit(raw_commit, git_object_free);
+      if ((peel_error = git_revwalk_push(walk.get(), git_object_id(commit.get()))) < 0) {
+        return peel_error;
+      }
+    }
+    if (error != GIT_ITEROVER) return error;
+    git_error_clear();
+  } else {
+    git_commit *raw_start = nullptr;
+    error = ResolveCommit(&raw_start, repository, request.revision);
+    if (error == GIT_EUNBORNBRANCH || error == GIT_ENOTFOUND) {
+      git_error_clear();
+      *json = "[]";
+      return 0;
+    }
+    if (error < 0) return error;
+    git_ptr<git_commit, git_commit_free> start(raw_start, git_commit_free);
+    if ((error = git_revwalk_push(walk.get(), git_commit_id(start.get()))) < 0) return error;
+  }
 
   std::vector<std::string> commits;
   git_oid oid;
@@ -2254,7 +2366,9 @@ class NativeWorker final : public Napi::AsyncWorker {
 public:
   NativeWorker(Napi::Env env, Request request, uint64_t cancel_id)
     : Napi::AsyncWorker(env), deferred_(Napi::Promise::Deferred::New(env)),
-      request_(std::move(request)), cancel_id_(cancel_id) {}
+      request_(std::move(request)), cancel_id_(cancel_id) {
+    diff_budget_.max_bytes = request_.max_bytes;
+  }
 
   Napi::Promise Promise() const { return deferred_.Promise(); }
 
@@ -2281,7 +2395,7 @@ public:
             result_ = '{' + Join(sections) + '}';
           }
         } else if (request_.entrypoint == "diff") {
-          error = BuildDiffJson(&result_, repository.get(), request_);
+          error = BuildDiffJson(&result_, repository.get(), request_, &diff_budget_);
         } else if (request_.entrypoint == "history") {
           error = BuildHistoryJson(&result_, repository.get(), request_);
         } else if (request_.entrypoint == "commit") {
@@ -2313,7 +2427,13 @@ public:
       error = GIT_EUSER;
     }
     if (error < 0) {
-      CaptureFailure(error, &failure_, "native Git operation failed");
+      if (request_.entrypoint == "diff" && diff_budget_.exceeded) {
+        failure_.code = error;
+        failure_.klass = GIT_ERROR_CALLBACK;
+        failure_.message = "native Git diff output exceeded the maxBytes limit";
+      } else {
+        CaptureFailure(error, &failure_, "native Git operation failed");
+      }
       SetError(failure_.message);
     }
   }
@@ -2328,11 +2448,18 @@ public:
     Napi::Object value = error.Value();
     const std::string operation = request_.entrypoint == "mutate" && !request_.operation.empty()
       ? request_.operation : request_.entrypoint;
-    value.Set("code", NativeCode(operation));
+    value.Set("code", request_.entrypoint == "diff" && diff_budget_.exceeded
+      ? "ERR_GIT_NATIVE_DIFF_TOO_LARGE" : NativeCode(operation));
     value.Set("operation", operation);
     value.Set("libgit2Code", failure_.code);
     value.Set("libgit2Class", failure_.klass);
     value.Set("libgit2Message", failure_.message);
+    if (request_.entrypoint == "diff" && diff_budget_.exceeded) {
+      value.Set("maxBytes", Napi::Number::New(Env(), request_.max_bytes));
+      value.Set("structuredBytes", Napi::Number::New(Env(), diff_budget_.structured_bytes));
+      value.Set("patchBytes", Napi::Number::New(Env(), diff_budget_.patch_bytes));
+      value.Set("retriable", false);
+    }
     deferred_.Reject(value);
   }
 
@@ -2348,6 +2475,7 @@ private:
   uint64_t cancel_id_ = 0;
   std::string result_;
   Failure failure_;
+  DiffBudget diff_budget_;
 };
 
 static Napi::Value Run(const Napi::CallbackInfo &info) {

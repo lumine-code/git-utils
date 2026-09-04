@@ -46,6 +46,15 @@ function canonicalPath (target) {
   return path.join(fs.realpathSync.native(path.dirname(target)), path.basename(target))
 }
 
+async function rejectionOf (promise) {
+  try {
+    await promise
+  } catch (error) {
+    return error
+  }
+  throw new Error('Expected the Promise to reject')
+}
+
 describe('native v10 operations', () => {
   let fixture
 
@@ -136,6 +145,27 @@ describe('native v10 operations', () => {
     expect(objects[0].content.toString()).toBe('one\ntwo\n')
     expect(objects[1].content.toString()).toBe('one\nchanged\n')
     expect(objects[2]).toBeNull()
+  })
+
+  it('walks and deduplicates history from all refs', async () => {
+    const initial = runGit(fixture.workingDirectory, ['rev-parse', 'HEAD']).stdout.trim()
+    runGit(fixture.workingDirectory, ['checkout', '-b', 'side'])
+    fs.writeFileSync(path.join(fixture.workingDirectory, 'tracked.txt'), 'side\n')
+    runGit(fixture.workingDirectory, ['commit', '-am', 'side'])
+    const side = runGit(fixture.workingDirectory, ['rev-parse', 'HEAD']).stdout.trim()
+    runGit(fixture.workingDirectory, ['tag', 'side-tag', side])
+    runGit(fixture.workingDirectory, ['update-ref', 'refs/remotes/origin/side', side])
+    runGit(fixture.workingDirectory, ['checkout', 'master'])
+
+    const headOnly = await git.history(fixture.descriptor, { revision: 'HEAD' })
+    expect(headOnly.map(commit => commit.sha)).toEqual([initial])
+
+    const all = await git.history(fixture.descriptor, { allRefs: true })
+    expect(all.map(commit => commit.sha)).toEqual([side, initial])
+    expect(new Set(all.map(commit => commit.sha)).size).toBe(2)
+
+    const paged = await git.history(fixture.descriptor, { allRefs: true, skip: 1, limit: 1 })
+    expect(paged.map(commit => commit.sha)).toEqual([initial])
   })
 
   it('performs the safe native config, remote, blob, file, and merge mutations', async () => {
@@ -261,6 +291,65 @@ describe('native v10 operations', () => {
     })
     expect(diff.files).toEqual([])
     expect(diff.rawPatch).toBe('')
+  })
+
+  it('stops oversized structured and patch diffs inside the native worker', async () => {
+    fs.writeFileSync(
+      path.join(fixture.workingDirectory, 'tracked.txt'),
+      'a substantially changed line\n'.repeat(2000)
+    )
+    const baseRequest = {
+      from: { type: 'commit', revision: 'HEAD' },
+      to: { type: 'worktree' },
+      maxBytes: 256
+    }
+
+    const structuredError = await rejectionOf(git.diff(fixture.descriptor, {
+      ...baseRequest,
+      format: 'structured'
+    }))
+    expect(structuredError).toEqual(jasmine.objectContaining({
+      name: 'Error',
+      code: 'ERR_GIT_NATIVE_DIFF_TOO_LARGE',
+      operation: 'diff',
+      maxBytes: 256,
+      patchBytes: 0,
+      libgit2Code: jasmine.any(Number),
+      libgit2Class: jasmine.any(Number),
+      libgit2Message: 'native Git diff output exceeded the maxBytes limit',
+      retriable: false
+    }))
+    expect(structuredError.structuredBytes).toBeGreaterThan(256)
+
+    const patchError = await rejectionOf(git.diff(fixture.descriptor, {
+      ...baseRequest,
+      format: 'patch'
+    }))
+    expect(patchError).toEqual(jasmine.objectContaining({
+      code: 'ERR_GIT_NATIVE_DIFF_TOO_LARGE',
+      operation: 'diff',
+      maxBytes: 256,
+      structuredBytes: 0,
+      libgit2Code: jasmine.any(Number),
+      libgit2Class: jasmine.any(Number),
+      libgit2Message: 'native Git diff output exceeded the maxBytes limit',
+      retriable: false
+    }))
+    expect(patchError.patchBytes).toBeGreaterThan(256)
+
+    const allowed = await git.diff(fixture.descriptor, {
+      ...baseRequest,
+      format: 'both',
+      maxBytes: 250000
+    })
+    expect(allowed.files.length).toBe(1)
+    expect(allowed.rawPatch).toEqual(jasmine.any(String))
+
+    expect(await git.diff(fixture.descriptor, {
+      from: { type: 'commit', revision: 'HEAD' },
+      to: { type: 'commit', revision: 'HEAD' },
+      maxBytes: 0
+    })).toEqual({ schemaVersion: 1, files: [] })
   })
 
   it('classifies binary patches and no-newline markers', async () => {
