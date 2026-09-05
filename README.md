@@ -2,21 +2,14 @@
 
 Provides native Git repository utilities built on libgit2.
 
-This project is retired and archived. Lumine now uses the system Git executable for repository operations, and this native backend is no longer maintained.
+> [!WARNING]
+> **This package is deprecated.** [Lumine](https://github.com/lumine-code/lumine) no longer depends on it — repository operations now run through the system Git executable in an isolated `git-host` process. This repository is archived and no longer maintained.
 
-The final release provided a stateless, asynchronous native backend based on libgit2 1.9.6 and exposed no repository handles to callers.
-
-Lumine briefly evaluated this backend against system Git. Native metadata reads were faster, but status and worktree diffs were substantially slower, while build, packaging, and maintenance costs remained high. Lumine therefore returned all repository operations to system Git.
-
-The remaining documentation describes the archived 10.0.0 API for historical reference.
-
-## Historical installation
+## Installation
 
 ```sh
 npm install @lumine-code/git-utils
 ```
-
-Lumine pinned the 10.0.0 release by commit rather than installing a registry release. The package contained the Node-API addon at `build/Release/git.node` and the exact binding/libgit2 inputs needed by `node-gyp` or `electron-rebuild`. A compatible packaged addon skipped redundant compilation; source checkouts always rebuilt. Script-suppressed application installs ran `node scripts/install.js --prepare-build` to hydrate the exact libgit2 pin without compiling before `electron-rebuild`. Intermediate `.lib`, `.obj`, and `.pdb` products were not shipped.
 
 ## API
 
@@ -58,7 +51,7 @@ An oversized diff rejects with `ERR_GIT_NATIVE_DIFF_TOO_LARGE` and the fields `m
 
 Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 bytes follow Node's normal decoding policy and become U+FFFD, matching Lumine's system-Git process decoding; callers that require byte-exact non-UTF-8 path identity are unsupported.
 
-## Historical development
+## Development
 
 - Clone the repository with its submodules, or run `npm run prepare` to hydrate libgit2.
 - Run `npm install` to build the addon for the current Node-API runtime.
@@ -70,4 +63,6 @@ Paths and messages cross Node-API as UTF-8 strings. On POSIX, invalid UTF-8 byte
 
 Version 10 removes the stateful `Repository`, `open()`, synchronous repository calls, and renderer-owned native handles. It adds a stateless Promise API, combined fingerprinted snapshots, structured diffs, batched reads, explicit native mutations, stable errors, cancellation, SHA-256 repository support, and libgit2 1.9.6.
 
-This repository is retained for historical reference and no longer accepts maintenance changes.
+## Contributing
+
+Got ideas to make this package better, found a bug, or want to help add new features? Just drop your thoughts on GitHub. Any feedback is welcome!
