@@ -2,7 +2,7 @@
   "name": "@lumine-code/git-utils",
   "author": "lumine-code",
   "description": "Provides native Git repository utilities built on libgit2.",
-  "version": "10.0.0",
+  "version": "1.0.0",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
