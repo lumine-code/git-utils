@@ -2,6 +2,8 @@
 
 Provides native Git repository utilities built on libgit2.
 
+Fork of [pulsar-edit/git-utils](https://github.com/pulsar-edit/git-utils).
+
 > [!WARNING]
 > **This package is deprecated.** [Lumine](https://github.com/lumine-code/lumine) no longer depends on it — repository operations now run through the system Git executable in an isolated `git-host` process. This repository is archived and no longer maintained.
 
