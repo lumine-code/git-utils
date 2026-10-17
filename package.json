@@ -41,7 +41,8 @@
     "scripts/install.js",
     "scripts/patch-libgit2-ignore.js",
     "src/native.cc",
-    "src/git.js"
+    "src/git.js",
+    "THIRD_PARTY_NOTICES"
   ],
   "devDependencies": {
     "jasmine": "^6.3.0",
